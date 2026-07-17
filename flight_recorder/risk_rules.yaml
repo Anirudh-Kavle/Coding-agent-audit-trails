@@ -1,0 +1,41 @@
+# Deterministic, table-driven risk classification. No LLM in the hot path.
+# Tiers, low to high severity: info < write < exec < network < sensitive
+# A tool gets its base tier from `tool_tiers`. Then `patterns` are checked
+# against the tool's command/args text; any match escalates to `sensitive`
+# and its `reason` is recorded.
+
+tool_tiers:
+  Read: info
+  Glob: info
+  Grep: info
+  LS: info
+  Edit: write
+  Write: write
+  NotebookEdit: write
+  Bash: exec
+  WebFetch: network
+  WebSearch: network
+
+default_tier: exec  # unrecognized tools (e.g. mcp__*) default here
+
+patterns:
+  - reason: "secret-like keyword"
+    regex: '(?i)\b(secret|token|credential|password|api[_-]?key)\b'
+  - reason: "destructive delete"
+    regex: '(?i)\brm\s+-rf\b'
+  - reason: "privilege escalation"
+    regex: '(?i)\bsudo\b'
+  - reason: "permissive chmod"
+    regex: 'chmod\s+7\d\d'
+  - reason: "dotenv file"
+    regex: '\.env\b'
+  - reason: "account creation"
+    regex: '(?i)\b(useradd|adduser|create[-_]?user|create[-_]?account)\b'
+  - reason: "destructive SQL"
+    regex: '(?i)\bDROP\s+TABLE\b'
+  - reason: "force push"
+    regex: '(?i)git\s+push\s+.*--force'
+  - reason: "keychain access"
+    regex: '(?i)\b(keychain|Keychain\.app|security\s+find-generic-password)\b'
+  - reason: "remote network tool in shell"
+    regex: '(?i)\b(curl|wget|ssh|scp)\b'
