@@ -130,12 +130,45 @@ def cmd_status(args: argparse.Namespace) -> None:
 
 
 def cmd_ui(args: argparse.Namespace) -> None:
-    import uvicorn
+    import os
+    import subprocess
 
     url = f"http://127.0.0.1:{args.port}"
+    command = [
+        sys.executable,
+        "-m",
+        "uvicorn",
+        "flight_recorder.viewer.app:app",
+        "--host",
+        "127.0.0.1",
+        "--port",
+        str(args.port),
+        "--log-level",
+        "warning",
+    ]
+    process_options = {}
+    if os.name == "nt":
+        process_options["creationflags"] = subprocess.CREATE_NEW_PROCESS_GROUP
+    else:
+        process_options["start_new_session"] = True
+
     if not args.no_browser:
         webbrowser.open(url)
-    uvicorn.run("flight_recorder.viewer.app:app", host="127.0.0.1", port=args.port, log_level="warning")
+    process = subprocess.Popen(command, **process_options)
+    try:
+        process.wait()
+    except KeyboardInterrupt:
+        print("\nStopping Flight Recorder...", flush=True)
+        process.terminate()
+        try:
+            process.wait(timeout=2)
+        except subprocess.TimeoutExpired:
+            process.kill()
+            process.wait()
+    finally:
+        if process.poll() is None:
+            process.kill()
+            process.wait()
 
 
 def cmd_grep(args: argparse.Namespace) -> None:
