@@ -196,7 +196,7 @@ const RISKY_TOOLS: { tool: string; risk: RiskTier; args: Record<string, unknown>
   { tool: "Bash", risk: "sensitive", args: { command: "rm -rf ./dist" }, why: "Clearing the stale build output before a fresh build." },
 ];
 
-let nextId = 1000;
+let nextId = 100;
 
 // Live-stream simulator: emits a plausible event so the timeline slide-in + pulse are demoable.
 export function generateMockEvent(): FlightEvent {
