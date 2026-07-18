@@ -10,8 +10,14 @@ dist/
 __pycache__/
 *.pyc
 *.pyo
-venv/
 *.egg-info/
+venv/
+.venv/
+build/
+
+# Docs / payload dumps
+docs/payloads/*.json
+docs/payloads/*.jsonl
 
 # IDE
 .vscode/
@@ -25,6 +31,9 @@ venv/
 *.db-shm
 *.db-wal
 events/
+
+# Local hook config (machine-specific paths)
+.claude/settings.json
 
 # OS
 .DS_Store
