@@ -15,6 +15,7 @@ from . import gitstate, notifier, reasoning, risk, store, tools
 PHASE_MAP = {
     "PreToolUse": "pre",
     "PostToolUse": "post",
+    "PermissionRequest": "session",
     "PreCompact": "compact",
     "SessionStart": "session",
     "SessionEnd": "session",
@@ -36,8 +37,13 @@ def _truncate(obj, max_len: int = 16 * 1024) -> tuple[str, bool]:
     return text, False
 
 
-def _provider(payload: dict) -> str:
-    return "codex"
+def _provider(payload: dict, override: str | None = None) -> str:
+    if override in {"codex", "claude", "api"}:
+        return override
+    # Hook payloads do not consistently include a provider field.  The
+    # command-line hook entry point supplies an explicit provider when a
+    # Claude config invokes it; Codex remains the safe default.
+    return str(payload.get("provider") or "codex")
 
 
 def _result_ok(response) -> int:
@@ -50,7 +56,7 @@ def _result_ok(response) -> int:
     return 1
 
 
-def _handle(payload: dict) -> None:
+def _handle(payload: dict, provider: str | None = None) -> None:
     if store.is_paused():
         return
 
@@ -110,7 +116,7 @@ def _handle(payload: dict) -> None:
             "tool_kind": tools.action_kind(tool_name, payload.get("tool_input")),
             "tool_use_id": payload.get("tool_use_id"),
             "turn_id": payload.get("turn_id"),
-            "provider": _provider(payload),
+            "provider": _provider(payload, provider),
             "model": payload.get("model"),
             "notification_sent": notification_sent,
             "arguments_json": arguments_text + ("...[truncated]" if args_truncated else ""),
@@ -201,8 +207,15 @@ def main() -> None:
         store.log_debug(f"hook: failed to parse stdin JSON: {exc!r}")
         sys.exit(0)
 
+    provider = None
+    if "--provider" in sys.argv:
+        try:
+            provider = sys.argv[sys.argv.index("--provider") + 1].lower()
+        except IndexError:
+            provider = None
+
     try:
-        _handle(payload)
+        _handle(payload, provider)
     except Exception as exc:
         store.log_debug(f"hook: unhandled exception: {exc!r}")
 

@@ -36,8 +36,5 @@ docs/payloads/*.jsonl
 *.db-wal
 events/
 
-# Local hook config (machine-specific paths)
-.claude/settings.json
-
 # OS
 .DS_Store
