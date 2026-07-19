@@ -137,6 +137,23 @@ def search(q: str = "", limit: int = 200) -> list[dict]:
         conn.close()
 
 
+@app.get("/api/recording")
+def get_recording() -> dict:
+    return {"paused": store.is_paused()}
+
+
+@app.post("/api/recording/pause")
+def pause_recording() -> dict:
+    store.set_paused(True)
+    return {"paused": True}
+
+
+@app.post("/api/recording/resume")
+def resume_recording() -> dict:
+    store.set_paused(False)
+    return {"paused": False}
+
+
 @app.get("/api/stream")
 async def stream():
     async def gen():

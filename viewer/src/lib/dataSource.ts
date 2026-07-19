@@ -16,7 +16,13 @@ export interface DataSource {
   getEvent(id: number): Promise<FlightEvent | undefined>;
   search(query: string): Promise<FlightEvent[]>;
   subscribe(onEvent: (e: FlightEvent) => void): () => void;
+  getRecordingPaused(): Promise<boolean>;
+  setRecordingPaused(paused: boolean): Promise<boolean>;
 }
+
+// Mock mode has no server to persist against — an in-memory flag is enough
+// to make the toggle behave believably within a single demo session.
+let mockPaused = false;
 
 const mockSource: DataSource = {
   async getSessions() {
@@ -35,11 +41,19 @@ const mockSource: DataSource = {
   },
   subscribe(onEvent) {
     const timer = setInterval(() => {
+      if (mockPaused) return;
       const e = generateMockEvent();
       mockEvents.push(e);
       onEvent(e);
     }, MOCK_STREAM_MS);
     return () => clearInterval(timer);
+  },
+  async getRecordingPaused() {
+    return mockPaused;
+  },
+  async setRecordingPaused(paused) {
+    mockPaused = paused;
+    return mockPaused;
   },
 };
 
@@ -49,6 +63,8 @@ const liveSource: DataSource = {
   getEvent: (id) => api.getEvent(id),
   search: (query) => api.search(query),
   subscribe: (onEvent) => api.streamEvents(onEvent),
+  getRecordingPaused: api.getRecordingPaused,
+  setRecordingPaused: api.setRecordingPaused,
 };
 
 export const dataSource: DataSource = USE_MOCK ? mockSource : liveSource;

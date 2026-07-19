@@ -1,5 +1,6 @@
 import { forwardRef } from "react";
 import { RecIndicator } from "./RecIndicator";
+import { RecordingToggle } from "./RecordingToggle";
 import { SearchBar } from "./SearchBar";
 
 interface Props {
@@ -22,6 +23,7 @@ export const TopBar = forwardRef<HTMLInputElement, Props>(
         <div className="flex-1">
           <SearchBar ref={ref} value={search} onChange={onSearch} onClear={onClearSearch} />
         </div>
+        <RecordingToggle />
       </header>
     );
   }
