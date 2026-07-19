@@ -1,13 +1,43 @@
+CLAUDE.md
+flight-recorder-spec.md
+
+# Frontend
+node_modules/
+*.tsbuildinfo
+dist/
+
+# Python
 __pycache__/
 *.pyc
+*.pyo
 *.egg-info/
-.venv/
 venv/
+.venv/
 build/
-dist/
+
+# Docs / payload dumps
 docs/payloads/*.json
 docs/payloads/*.jsonl
 .codex/hooks.json
 .env
 .env.*
 !.env.example
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# Storage
+~/.flight-recorder/
+*.db
+*.db-shm
+*.db-wal
+events/
+
+# Local hook config (machine-specific paths)
+.claude/settings.json
+
+# OS
+.DS_Store

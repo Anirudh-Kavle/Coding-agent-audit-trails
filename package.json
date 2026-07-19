@@ -1,0 +1,16 @@
+{
+  "name": "flight-recorder",
+  "description": "Local, real-time audit trail for Claude Code sessions",
+  "version": "0.0.1",
+  "private": true,
+  "workspaces": [
+    "viewer"
+  ],
+  "scripts": {
+    "build": "cd viewer && npm run build",
+    "dev:viewer": "cd viewer && npm run dev",
+    "dev:daemon": "cd services/daemon && python -m fr_hook",
+    "dev:store": "cd services/store && uvicorn viewer:app --reload --host 127.0.0.1 --port 7878",
+    "install:all": "npm install && cd services/store && pip install -r requirements.txt && cd ../daemon && pip install -r requirements.txt"
+  }
+}

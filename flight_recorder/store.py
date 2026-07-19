@@ -16,6 +16,7 @@ EVENTS_DIR = STORE_DIR / "events"
 SNAPSHOTS_DIR = STORE_DIR / "snapshots"
 DEBUG_LOG = STORE_DIR / "debug.log"
 RAW_PAYLOADS_LOG = STORE_DIR / "debug" / "raw_payloads.jsonl"
+PAUSE_FLAG = STORE_DIR / "paused"
 
 SCHEMA_PATH = Path(__file__).with_name("schema.sql")
 
@@ -27,12 +28,40 @@ def ensure_dirs() -> None:
     RAW_PAYLOADS_LOG.parent.mkdir(parents=True, exist_ok=True)
 
 
+def is_paused() -> bool:
+    return PAUSE_FLAG.exists()
+
+
+def set_paused(paused: bool) -> None:
+    """Toggled from the viewer's record button. A bare marker file, not a DB
+    row — the hook must be able to check this before it ever touches SQLite,
+    including while the DB is mid-wipe."""
+    ensure_dirs()
+    if paused:
+        PAUSE_FLAG.touch()
+    else:
+        PAUSE_FLAG.unlink(missing_ok=True)
+
+
+def _migrate(conn: sqlite3.Connection) -> None:
+    """Add columns to pre-existing DBs from before this field existed.
+    CREATE TABLE IF NOT EXISTS (in init_db) never alters an existing table,
+    so installs from before tool_use_id was added need this to keep working."""
+    if not conn.execute("SELECT name FROM sqlite_master WHERE type='table' AND name='events'").fetchone():
+        return  # fresh DB — init_db()'s schema.sql already has the column
+    cols = {row[1] for row in conn.execute("PRAGMA table_info(events)")}
+    if "tool_use_id" not in cols:
+        conn.execute("ALTER TABLE events ADD COLUMN tool_use_id TEXT")
+        conn.commit()
+
+
 def get_conn() -> sqlite3.Connection:
     ensure_dirs()
     conn = sqlite3.connect(DB_PATH, timeout=5)
     conn.execute("PRAGMA journal_mode=WAL")
     conn.execute("PRAGMA busy_timeout=5000")
     conn.row_factory = sqlite3.Row
+    _migrate(conn)
     return conn
 
 
@@ -161,6 +190,42 @@ def complete_event(conn: sqlite3.Connection, *, session_id: str, action_id: str,
 def get_event(conn: sqlite3.Connection, event_id: int) -> dict:
     row = conn.execute("SELECT * FROM events WHERE id = ?", (event_id,)).fetchone()
     return dict(row) if row else {}
+
+
+def update_event_reasoning(conn: sqlite3.Connection, event_id: int, reasoning_text: str) -> None:
+    """Self-heal path: a PreToolUse capture that came back as a gap because
+    the transcript file hadn't caught up yet gets a second, later chance at
+    PostToolUse time — patched in only when that retry actually succeeds."""
+    conn.execute(
+        "UPDATE events SET reasoning_text = ?, capture_gap = 0 WHERE id = ?",
+        (reasoning_text, event_id),
+    )
+
+
+def find_stale_gaps(conn: sqlite3.Connection, session_id: str, now_ms: int, max_age_ms: int = 30 * 60 * 1000, limit: int = 5):
+    """Still-gapped pre-events in this session, if any, bounded to a recency
+    window. PostToolUse isn't guaranteed to fire (Claude Code can skip it —
+    seen in practice), so self-heal there isn't a sure second look; any later
+    hook in the same session is another opportunity to retry.
+
+    Returns several candidates, not just the newest one: a batch of
+    sequential calls with no narration between them (legitimate gaps) can
+    sit in front of an older call that genuinely does have recoverable
+    reasoning — checking only the single most recent gap lets that newer,
+    permanently-unhealable one mask the older, healable one forever (seen in
+    practice: three sequential Read calls where the newest two were
+    legitimate gaps and permanently blocked the oldest, recoverable one from
+    ever being retried). The age bound keeps a long run of unrecoverable
+    gaps from costing every subsequent hook call an unbounded amount of work."""
+    return conn.execute(
+        """
+        SELECT * FROM events
+        WHERE session_id = ? AND phase = 'pre' AND capture_gap = 1
+          AND tool IS NOT NULL AND tool_use_id IS NOT NULL AND ts >= ?
+        ORDER BY id DESC LIMIT ?
+        """,
+        (session_id, now_ms - max_age_ms, limit),
+    ).fetchall()
 
 
 def insert_event(conn: sqlite3.Connection, event: dict) -> int:

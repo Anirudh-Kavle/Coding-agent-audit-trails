@@ -9,16 +9,13 @@ import sqlite3
 from datetime import date
 from pathlib import Path
 
-from fastapi import FastAPI, Query
-from fastapi.responses import HTMLResponse, StreamingResponse
+from fastapi import FastAPI
+from fastapi.responses import StreamingResponse
 from fastapi.staticfiles import StaticFiles
 
 from .. import store
 
 app = FastAPI(title="Flight Recorder")
-
-STATIC_DIR = Path(__file__).parent / "static"
-app.mount("/static", StaticFiles(directory=STATIC_DIR), name="static")
 
 
 def _conn() -> sqlite3.Connection:
@@ -34,11 +31,6 @@ def _event_to_dict(row: sqlite3.Row) -> dict:
     except (json.JSONDecodeError, TypeError):
         d["risk_reasons"] = []
     return d
-
-
-@app.get("/", response_class=HTMLResponse)
-def index() -> HTMLResponse:
-    return HTMLResponse((STATIC_DIR / "index.html").read_text(encoding="utf-8"))
 
 
 @app.get("/api/sessions")
@@ -75,11 +67,22 @@ def usage() -> dict:
 def session_events(session_id: str, risk: str | None = None, limit: int = 500) -> list[dict]:
     conn = _conn()
     try:
-        sql = "SELECT * FROM events WHERE session_id = ?"
-        params: list = [session_id]
+        # session_id "all" means no session filter — the viewer's full-history load.
+        # tool IS NOT NULL excludes toolless lifecycle bookkeeping (SessionStart/
+        # End, Stop, PreCompact) — real audit rows, just not "actions" the
+        # timeline has a WHAT/WHY to show; they'd otherwise render as a bare
+        # "null" tool badge with nothing else in it.
+        where: list[str] = ["tool IS NOT NULL"]
+        params: list = []
+        if session_id != "all":
+            where.append("session_id = ?")
+            params.append(session_id)
         if risk:
-            sql += " AND risk = ?"
+            where.append("risk = ?")
             params.append(risk)
+        sql = "SELECT * FROM events"
+        if where:
+            sql += " WHERE " + " AND ".join(where)
         sql += " ORDER BY ts DESC LIMIT ?"
         params.append(limit)
         rows = conn.execute(sql, params).fetchall()
@@ -108,7 +111,7 @@ def search(q: str = "", limit: int = 200) -> list[dict]:
 
     conn = _conn()
     try:
-        conditions = []
+        conditions = ["tool IS NOT NULL"]
         params: list = []
 
         if free_text:
@@ -149,6 +152,23 @@ def search(q: str = "", limit: int = 200) -> list[dict]:
         conn.close()
 
 
+@app.get("/api/recording")
+def get_recording() -> dict:
+    return {"paused": store.is_paused()}
+
+
+@app.post("/api/recording/pause")
+def pause_recording() -> dict:
+    store.set_paused(True)
+    return {"paused": True}
+
+
+@app.post("/api/recording/resume")
+def resume_recording() -> dict:
+    store.set_paused(False)
+    return {"paused": False}
+
+
 @app.get("/api/stream")
 async def stream():
     async def gen():
@@ -157,7 +177,7 @@ async def stream():
             last_id = conn.execute("SELECT COALESCE(MAX(id), 0) FROM events").fetchone()[0]
             while True:
                 rows = conn.execute(
-                    "SELECT * FROM events WHERE id > ? ORDER BY id ASC", (last_id,)
+                    "SELECT * FROM events WHERE id > ? AND tool IS NOT NULL ORDER BY id ASC", (last_id,)
                 ).fetchall()
                 for row in rows:
                     d = _event_to_dict(row)
@@ -168,3 +188,20 @@ async def stream():
             conn.close()
 
     return StreamingResponse(gen(), media_type="text/event-stream")
+
+
+# The React viewer, mounted last so /api/* routes always win.
+# ponytail: repo-relative dist path; breaks for pip-installed wheels — package
+# the dist as data files if we ever ship one.
+DIST_DIR = Path(__file__).resolve().parents[2] / "viewer" / "dist"
+if DIST_DIR.is_dir():
+    app.mount("/", StaticFiles(directory=DIST_DIR, html=True), name="ui")
+else:
+
+    @app.get("/")
+    def index() -> dict:
+        return {
+            "app": "flight-recorder",
+            "api": "/api/sessions",
+            "ui": "cd viewer && npm run build, or npm run dev (:5173 proxies /api)",
+        }
