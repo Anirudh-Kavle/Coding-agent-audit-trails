@@ -142,12 +142,20 @@ def _handle(payload: dict) -> None:
         # in practice — a malformed command's PreToolUse never got a matching
         # PostToolUse, so the pairing self-heal above never got a chance to
         # run). Any hook firing in this session is another opportunity to
-        # retry the most recent still-gapped call, bounded to a recency
-        # window so one permanently-unrecoverable gap doesn't cost every
-        # later hook a lookup for the rest of a long session.
+        # retry recent still-gapped calls, bounded to a recency window so a
+        # long run of unrecoverable gaps doesn't cost every later hook
+        # unbounded work.
+        #
+        # Checks several candidates, not just the newest: a batch of
+        # sequential calls with nothing between them (legitimate gaps) can
+        # sit in front of an older call that genuinely does have recoverable
+        # reasoning — only ever checking the single most recent one lets it
+        # mask an older, healable gap forever (seen in practice with three
+        # sequential Reads).
         if transcript_path:
-            stale = store.find_stale_gap(conn, session_id, ts)
-            if stale is not None and stale["id"] != current_id:
+            for stale in store.find_stale_gaps(conn, session_id, ts):
+                if stale["id"] == current_id:
+                    continue
                 healed_text, healed_gap = reasoning.extract_reasoning(transcript_path, stale["tool_use_id"])
                 if not healed_gap and healed_text:
                     store.update_event_reasoning(conn, stale["id"], healed_text)

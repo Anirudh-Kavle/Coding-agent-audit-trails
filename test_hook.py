@@ -186,6 +186,54 @@ def test_opportunistic_heal_recovers_a_gap_when_post_tool_use_never_fires(isolat
     assert second["reasoning_text"] == "Now let's check the date"
 
 
+def test_opportunistic_heal_reaches_past_a_newer_unhealable_gap(isolated_store, tmp_path):
+    # Regression for the real incident: three sequential calls where the
+    # OLDEST has real, recoverable reasoning but the two newer ones are
+    # legitimate permanent gaps (nothing preceded them). Only ever checking
+    # the single most recent stale row lets those newer gaps mask the older,
+    # healable one forever — this must reach past them.
+    transcript_path = tmp_path / "session.jsonl"
+    _write_transcript(transcript_path, [_user_prompt("read three files")])
+
+    base_payload = {
+        "hook_event_name": "PreToolUse",
+        "session_id": "sess1",
+        "cwd": str(tmp_path),
+        "transcript_path": str(transcript_path),
+        "tool_name": "Read",
+    }
+    for tool_use_id in ("toolu_a", "toolu_b", "toolu_c"):
+        hook._handle(dict(base_payload, tool_input={"file_path": tool_use_id}, tool_use_id=tool_use_id))
+
+    conn = store.get_conn()
+    rows = {r["tool_use_id"]: r["capture_gap"] for r in conn.execute("SELECT * FROM events")}
+    conn.close()
+    assert rows == {"toolu_a": 1, "toolu_b": 1, "toolu_c": 1}
+
+    # Transcript catches up: real thinking before the FIRST call only; the
+    # second and third really do have nothing between them (legitimate gaps).
+    _write_transcript(transcript_path, [
+        _user_prompt("read three files"),
+        _thinking("I'll read all three files"),
+        _tool_use("toolu_a", name="Read"),
+        _tool_result(),
+        _tool_use("toolu_b", name="Read"),
+        _tool_result(),
+        _tool_use("toolu_c", name="Read"),
+        _tool_result(),
+        _thinking("a later, unrelated action"),
+        _tool_use("toolu_d", name="Bash", command="date"),
+    ])
+    hook._handle(dict(base_payload, tool_name="Bash", tool_input={"command": "date"}, tool_use_id="toolu_d"))
+
+    conn = store.get_conn()
+    rows = {r["tool_use_id"]: (r["capture_gap"], r["reasoning_text"]) for r in conn.execute("SELECT * FROM events")}
+    conn.close()
+    assert rows["toolu_a"] == (0, "I'll read all three files")
+    assert rows["toolu_b"] == (1, None)
+    assert rows["toolu_c"] == (1, None)
+
+
 def test_opportunistic_heal_ignores_gaps_outside_the_recency_window(isolated_store, tmp_path):
     transcript_path = tmp_path / "session.jsonl"
     _write_transcript(transcript_path, [_user_prompt("run echo hi")])
@@ -202,8 +250,8 @@ def test_opportunistic_heal_ignores_gaps_outside_the_recency_window(isolated_sto
     hook._handle(old_call)
 
     conn = store.get_conn()
-    # Backdate it past the 5-minute recency window.
-    conn.execute("UPDATE events SET ts = ts - 600000 WHERE tool_use_id='toolu_old'")
+    # Backdate it past the 30-minute recency window.
+    conn.execute("UPDATE events SET ts = ts - 2400000 WHERE tool_use_id='toolu_old'")
     conn.commit()
     conn.close()
 

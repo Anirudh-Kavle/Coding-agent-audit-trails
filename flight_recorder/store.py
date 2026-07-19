@@ -110,22 +110,30 @@ def update_event_reasoning(conn: sqlite3.Connection, event_id: int, reasoning_te
     )
 
 
-def find_stale_gap(conn: sqlite3.Connection, session_id: str, now_ms: int, max_age_ms: int = 5 * 60 * 1000):
-    """Most recent still-gapped pre-event in this session, if any, bounded to
-    a recency window. PostToolUse isn't guaranteed to fire (Claude Code can
-    skip it — seen in practice), so self-heal there isn't a sure second look;
-    any later hook in the same session is another opportunity to retry. The
-    age bound keeps a permanently-unrecoverable gap from costing every
-    subsequent hook call a lookup for the rest of a long session."""
+def find_stale_gaps(conn: sqlite3.Connection, session_id: str, now_ms: int, max_age_ms: int = 30 * 60 * 1000, limit: int = 5):
+    """Still-gapped pre-events in this session, if any, bounded to a recency
+    window. PostToolUse isn't guaranteed to fire (Claude Code can skip it —
+    seen in practice), so self-heal there isn't a sure second look; any later
+    hook in the same session is another opportunity to retry.
+
+    Returns several candidates, not just the newest one: a batch of
+    sequential calls with no narration between them (legitimate gaps) can
+    sit in front of an older call that genuinely does have recoverable
+    reasoning — checking only the single most recent gap lets that newer,
+    permanently-unhealable one mask the older, healable one forever (seen in
+    practice: three sequential Read calls where the newest two were
+    legitimate gaps and permanently blocked the oldest, recoverable one from
+    ever being retried). The age bound keeps a long run of unrecoverable
+    gaps from costing every subsequent hook call an unbounded amount of work."""
     return conn.execute(
         """
         SELECT * FROM events
         WHERE session_id = ? AND phase = 'pre' AND capture_gap = 1
           AND tool IS NOT NULL AND tool_use_id IS NOT NULL AND ts >= ?
-        ORDER BY id DESC LIMIT 1
+        ORDER BY id DESC LIMIT ?
         """,
-        (session_id, now_ms - max_age_ms),
-    ).fetchone()
+        (session_id, now_ms - max_age_ms, limit),
+    ).fetchall()
 
 
 def insert_event(conn: sqlite3.Connection, event: dict) -> int:
