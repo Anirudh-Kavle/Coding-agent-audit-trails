@@ -10,6 +10,9 @@ dependencies = [
     "openai>=1.0",
 ]
 
+[project.optional-dependencies]
+dev = ["pytest>=8", "httpx>=0.27"]
+
 [project.scripts]
 fr = "flight_recorder.cli:main"
 fr-hook = "flight_recorder.hook:main"

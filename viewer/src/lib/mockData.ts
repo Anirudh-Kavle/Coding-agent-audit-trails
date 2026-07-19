@@ -1,0 +1,224 @@
+import type { FlightEvent, RiskTier, Session } from "../types";
+
+const now = Date.now();
+const MIN = 60_000;
+const HOUR = 60 * MIN;
+const DAY = 24 * HOUR;
+
+export const mockSessions: Session[] = [
+  {
+    id: "sess_api_work",
+    label: "api-work",
+    started_at: now - 12 * MIN,
+    cwd: "/Users/dev/staging-deploy",
+    git_repo: "staging-deploy",
+    source: "interactive",
+    live: true,
+  },
+  {
+    id: "sess_fix_auth",
+    label: "fix-auth",
+    started_at: now - 55 * MIN,
+    ended_at: now - 40 * MIN,
+    cwd: "/Users/dev/staging-deploy",
+    git_repo: "staging-deploy",
+    source: "interactive",
+  },
+  {
+    id: "sess_docs",
+    label: "docs-pass",
+    started_at: now - DAY - 3 * HOUR,
+    ended_at: now - DAY - 2 * HOUR,
+    cwd: "/Users/dev/handbook",
+    git_repo: "handbook",
+    source: "headless",
+  },
+];
+
+export const mockEvents: FlightEvent[] = [
+  {
+    id: 1,
+    session_id: "sess_api_work",
+    ts: now - 5 * MIN,
+    phase: "post",
+    tool: "Read",
+    arguments_json: { file_path: "config/deploy.yaml" },
+    result_json: { content: "api:\n  port: 8080\n  debug: false" },
+    exit_ok: true,
+    risk: "info",
+    risk_reasons: "Read operation",
+    reasoning_text:
+      "Before touching the deploy config I want to see the current values so I don't clobber anything the team already set.",
+    capture_gap: false,
+    git_branch: "main",
+    git_head: "a1b2c3d",
+    git_dirty: false,
+    files_touched: ["config/deploy.yaml"],
+    created_at: now - 5 * MIN,
+  },
+  {
+    id: 2,
+    session_id: "sess_api_work",
+    ts: now - 4 * MIN,
+    phase: "post",
+    tool: "Edit",
+    arguments_json: {
+      file_path: "config/deploy.yaml",
+      old_string: "debug: false",
+      new_string: "debug: true",
+    },
+    result_json: { success: true, lines_changed: 1 },
+    exit_ok: true,
+    risk: "write",
+    risk_reasons: "File modification",
+    reasoning_text:
+      "Enabling debug so the staging deploy logs the full request flow — we'll turn this back off before promoting to prod.",
+    capture_gap: false,
+    git_branch: "main",
+    git_head: "a1b2c3d",
+    git_dirty: true,
+    files_touched: ["config/deploy.yaml"],
+    created_at: now - 4 * MIN,
+  },
+  {
+    id: 3,
+    session_id: "sess_api_work",
+    ts: now - 3 * MIN,
+    phase: "post",
+    tool: "Bash",
+    arguments_json: { command: "npm run migrate" },
+    result_json: {
+      stdout: "Running migrations...\n✓ 001_init.sql\n✓ 002_auth.sql",
+      exit_code: 0,
+    },
+    exit_ok: true,
+    risk: "exec",
+    risk_reasons: "Shell command execution",
+    reasoning_text:
+      "The auth tables need to exist before the service account can be granted a role, so I'm applying the pending migrations first.",
+    capture_gap: false,
+    git_branch: "main",
+    git_head: "a1b2c3d",
+    git_dirty: true,
+    files_touched: [],
+    created_at: now - 3 * MIN,
+  },
+  {
+    id: 4,
+    session_id: "sess_api_work",
+    ts: now - 90_000,
+    phase: "post",
+    tool: "Bash",
+    arguments_json: { command: "useradd -m -s /bin/bash staging-svc" },
+    result_json: { stdout: "", exit_code: 0 },
+    exit_ok: true,
+    risk: "sensitive",
+    risk_reasons: "Account creation pattern (useradd)",
+    reasoning_text:
+      "I need a dedicated service account for the staging deploy so the pipeline isn't running as my personal user. Creating staging-svc non-interactively with a home dir and shell.",
+    capture_gap: false,
+    git_branch: "main",
+    git_head: "a1b2c3d",
+    git_dirty: true,
+    files_touched: [],
+    created_at: now - 90_000,
+  },
+  {
+    id: 5,
+    session_id: "sess_api_work",
+    ts: now - 30_000,
+    phase: "post",
+    tool: "WebFetch",
+    arguments_json: { url: "https://api.internal/deploy", method: "POST" },
+    result_json: { status: 200, body: { deployment_id: "dpl_9f2", status: "queued" } },
+    exit_ok: true,
+    risk: "network",
+    risk_reasons: "External network call (HTTP POST)",
+    reasoning_text:
+      "Config is set, migrations applied, service account exists — triggering the staging deployment via the internal deploy API.",
+    capture_gap: false,
+    git_branch: "main",
+    git_head: "a1b2c3d",
+    git_dirty: false,
+    files_touched: [],
+    created_at: now - 30_000,
+  },
+  // Older session with a capture_gap — the honest amber note demo.
+  {
+    id: 6,
+    session_id: "sess_fix_auth",
+    ts: now - 50 * MIN,
+    phase: "post",
+    tool: "Edit",
+    arguments_json: {
+      file_path: "config/deploy.yaml",
+      old_string: "TOKEN_TTL=3600",
+      new_string: "TOKEN_TTL=86400",
+    },
+    result_json: { success: true, lines_changed: 1 },
+    exit_ok: true,
+    risk: "write",
+    risk_reasons: "File modification",
+    reasoning_text: undefined,
+    capture_gap: true, // transcript compacted before we could capture the why
+    git_branch: "fix-auth",
+    git_head: "9e8d7c6",
+    git_dirty: false,
+    files_touched: ["config/deploy.yaml"],
+    created_at: now - 50 * MIN,
+  },
+  {
+    id: 7,
+    session_id: "sess_docs",
+    ts: now - DAY - 2.5 * HOUR,
+    phase: "post",
+    tool: "Write",
+    arguments_json: { file_path: "docs/architecture.md", content: "# Architecture\n..." },
+    result_json: { success: true },
+    exit_ok: true,
+    risk: "write",
+    risk_reasons: "File creation",
+    reasoning_text: "Documenting the recorder architecture so the team has a reference.",
+    capture_gap: false,
+    git_branch: "main",
+    git_head: "1122334",
+    git_dirty: true,
+    files_touched: ["docs/architecture.md"],
+    created_at: now - DAY - 2.5 * HOUR,
+  },
+];
+
+const RISKY_TOOLS: { tool: string; risk: RiskTier; args: Record<string, unknown>; why: string }[] = [
+  { tool: "Read", risk: "info", args: { file_path: "src/index.ts" }, why: "Checking the current implementation before editing." },
+  { tool: "Edit", risk: "write", args: { file_path: "src/app.ts", old_string: "a", new_string: "b" }, why: "Applying the fix to the handler." },
+  { tool: "Bash", risk: "exec", args: { command: "npm test" }, why: "Running the suite to confirm the change is green." },
+  { tool: "WebFetch", risk: "network", args: { url: "https://registry.npmjs.org/x", method: "GET" }, why: "Fetching the package metadata to check the latest version." },
+  { tool: "Bash", risk: "sensitive", args: { command: "rm -rf ./dist" }, why: "Clearing the stale build output before a fresh build." },
+];
+
+let nextId = 100;
+
+// Live-stream simulator: emits a plausible event so the timeline slide-in + pulse are demoable.
+export function generateMockEvent(): FlightEvent {
+  const t = RISKY_TOOLS[Math.floor(Math.random() * RISKY_TOOLS.length)];
+  const ts = Date.now();
+  return {
+    id: nextId++,
+    session_id: "sess_api_work",
+    ts,
+    phase: "post",
+    tool: t.tool,
+    arguments_json: t.args,
+    result_json: { status: "ok" },
+    exit_ok: true,
+    risk: t.risk,
+    risk_reasons: `${t.tool} operation`,
+    reasoning_text: t.why,
+    capture_gap: false,
+    git_branch: "main",
+    git_head: "a1b2c3d",
+    git_dirty: true,
+    files_touched: "file_path" in t.args ? [String(t.args.file_path)] : [],
+    created_at: ts,
+  };
+}
