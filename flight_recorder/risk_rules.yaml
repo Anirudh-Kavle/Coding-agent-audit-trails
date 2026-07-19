@@ -13,6 +13,9 @@ tool_tiers:
   Write: write
   NotebookEdit: write
   Bash: exec
+  apply_patch: write
+  update_plan: info
+  view_image: info
   WebFetch: network
   WebSearch: network
 

@@ -40,7 +40,26 @@ def init_db() -> None:
     ensure_dirs()
     conn = get_conn()
     try:
+        # Existing hackathon databases predate the Codex correlation fields.
+        # Run the base schema, then migrate in place without deleting events.
         conn.executescript(SCHEMA_PATH.read_text())
+        columns = {row[1] for row in conn.execute("PRAGMA table_info(events)")}
+        for name in ("tool_kind", "tool_use_id", "turn_id", "provider", "model", "notification_sent", "token_count", "usage_json", "action_id", "completed_at"):
+            if name not in columns:
+                conn.execute(f"ALTER TABLE events ADD COLUMN {name} TEXT")
+        session_columns = {row[1] for row in conn.execute("PRAGMA table_info(sessions)")}
+        for name, definition in (("token_limit", "INTEGER"), ("time_limit_s", "INTEGER"), ("token_used", "INTEGER NOT NULL DEFAULT 0")):
+            if name not in session_columns:
+                conn.execute(f"ALTER TABLE sessions ADD COLUMN {name} {definition}")
+        conn.execute("CREATE INDEX IF NOT EXISTS idx_events_tool_kind ON events(tool_kind)")
+        conn.execute(
+            "CREATE INDEX IF NOT EXISTS idx_events_tool_use_id "
+            "ON events(session_id, tool_use_id) WHERE tool_use_id IS NOT NULL"
+        )
+        conn.execute(
+            "CREATE INDEX IF NOT EXISTS idx_events_action_id "
+            "ON events(session_id, action_id) WHERE action_id IS NOT NULL"
+        )
         conn.commit()
     finally:
         conn.close()
@@ -64,6 +83,24 @@ def mark_session_ended(conn: sqlite3.Connection, session_id: str, ts: int) -> No
     conn.execute("UPDATE sessions SET ended_at = ? WHERE id = ?", (ts, session_id))
 
 
+def update_session_usage(conn: sqlite3.Connection, session_id: str, tokens: int) -> None:
+    conn.execute("UPDATE sessions SET token_used = COALESCE(token_used, 0) + ? WHERE id = ?", (tokens, session_id))
+
+
+def get_daily_usage(conn: sqlite3.Connection, day: str) -> int:
+    row = conn.execute("SELECT token_count FROM api_usage WHERE day = ?", (day,)).fetchone()
+    return int(row[0]) if row else 0
+
+
+def add_daily_usage(conn: sqlite3.Connection, day: str, tokens: int, updated_at: int) -> None:
+    conn.execute(
+        """INSERT INTO api_usage(day, token_count, updated_at) VALUES (?, ?, ?)
+           ON CONFLICT(day) DO UPDATE SET token_count = api_usage.token_count + excluded.token_count,
+           updated_at = excluded.updated_at""",
+        (day, tokens, updated_at),
+    )
+
+
 def find_pending_pre_event(conn: sqlite3.Connection, session_id: str, tool: str) -> sqlite3.Row | None:
     """The most recent unpaired 'pre' row for this session+tool, if any.
 
@@ -80,6 +117,21 @@ def find_pending_pre_event(conn: sqlite3.Connection, session_id: str, tool: str)
     ).fetchone()
 
 
+def find_pre_event_by_tool_use_id(
+    conn: sqlite3.Connection, session_id: str, tool_use_id: str
+) -> sqlite3.Row | None:
+    """Find the exact tool invocation awaiting its result."""
+    return conn.execute(
+        """
+        SELECT * FROM events
+        WHERE session_id = ? AND tool_use_id = ? AND phase = 'pre'
+          AND (result_json IS NULL OR result_json = '')
+        ORDER BY id DESC LIMIT 1
+        """,
+        (session_id, tool_use_id),
+    ).fetchone()
+
+
 def update_event_result(conn: sqlite3.Connection, event_id: int, result_json: str, exit_ok: int | None) -> None:
     conn.execute(
         "UPDATE events SET result_json = ?, exit_ok = ? WHERE id = ?",
@@ -87,9 +139,35 @@ def update_event_result(conn: sqlite3.Connection, event_id: int, result_json: st
     )
 
 
+def complete_event(conn: sqlite3.Connection, *, session_id: str, action_id: str,
+                   tool: str, completed_at: int, result_json: str,
+                   exit_ok: int) -> int | None:
+    row = conn.execute(
+        """SELECT id FROM events
+           WHERE session_id = ? AND action_id = ? AND tool = ? AND phase = 'pre'
+             AND (result_json IS NULL OR result_json = '')
+           ORDER BY id DESC LIMIT 1""",
+        (session_id, action_id, tool),
+    ).fetchone()
+    if row is None:
+        return None
+    conn.execute(
+        "UPDATE events SET completed_at = ?, result_json = ?, exit_ok = ? WHERE id = ?",
+        (completed_at, result_json, exit_ok, row["id"]),
+    )
+    return row["id"]
+
+
+def get_event(conn: sqlite3.Connection, event_id: int) -> dict:
+    row = conn.execute("SELECT * FROM events WHERE id = ?", (event_id,)).fetchone()
+    return dict(row) if row else {}
+
+
 def insert_event(conn: sqlite3.Connection, event: dict) -> int:
     cols = [
-        "session_id", "ts", "phase", "tool", "arguments_json", "result_json",
+        "session_id", "ts", "phase", "tool", "action_id", "completed_at",
+        "tool_kind", "tool_use_id",
+        "turn_id", "provider", "model", "notification_sent", "token_count", "usage_json", "arguments_json", "result_json",
         "exit_ok", "reasoning_text", "risk", "risk_reasons", "capture_gap",
         "git_branch", "git_head", "git_dirty", "files_touched",
     ]

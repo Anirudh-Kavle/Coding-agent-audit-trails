@@ -1,6 +1,17 @@
 # Flight Recorder
 
-A local, real-time black box for Claude Code sessions. Captures every
+Codex support: run `fr init` to register project hooks in `.codex/hooks.json`.
+Codex `PreToolUse`/`PostToolUse` events preserve the exact raw `tool_name` and
+store a normalized `tool_kind`: `bash`, `edit`, `write`, `read`, `webfetch`,
+`mcp`, or `other`. Codex's `tool_use_id` pairs each pre-action with its exact
+post-action result, even when identical tools run concurrently. Open `/hooks`
+in Codex once to review and trust the project hook commands.
+
+Coverage note: Codex hooks observe shell/unified-exec (`Bash`), `apply_patch`,
+MCP, and other local function tools. Hosted tools such as `WebSearch` do not
+use the local hook path and therefore remain outside this recorder's coverage.
+
+A local, real-time black box for Codex sessions. Captures every
 consequential action (shell commands, file edits, network calls, account/
 credential operations) at the moment it happens, binds it to the reasoning
 that preceded it, and keeps everything in a local, append-only, greppable
@@ -12,7 +23,7 @@ until the transcript compacts or auto-deletes.
 Day 1 scaffold: real hook capture → SQLite (WAL) + JSONL mirror, a working
 FastAPI viewer with a live SSE timeline + drawer, and the `fr` CLI. Reasoning
 extraction (`flight_recorder/reasoning.py`) is defensive but **not yet
-validated against real Claude Code transcript payloads** — that's the
+validated against real Codex transcript payloads** — that's the
 first thing to check once you've captured a few live sessions. Raw hook
 payloads are dumped to `~/.flight-recorder/debug/raw_payloads.jsonl` for
 exactly that purpose.
@@ -27,27 +38,39 @@ pip install -e .
 
 ```
 cd your-project
-fr init      # registers hooks in ./.claude/settings.json, creates the store
+fr init      # registers hooks in ./.codex/hooks.json, creates the store
 fr status    # check hooks + event counts
 fr ui        # opens the live timeline at http://127.0.0.1:7878
 fr grep <pattern>   # grep across the JSONL mirror
+fr api-ui    # interactive API-backed agent with reasoning summaries
 ```
 
-Then just use Claude Code in that project — actions stream into the
+Then just use Codex in that project — actions stream into the
 timeline live.
+
+Set `OPENAI_API_KEY` and run `fr api-ui` for the separate API-backed agent.
+It records into the same store and requests API reasoning summaries. Use
+`/clear` to reset conversation context, `/status` to inspect the store, and
+`/quit` to exit. These are summaries, not private chain-of-thought.
+
+Session guardrails are available with `--token-limit N`, `--time-limit SECONDS`,
+and `--daily-token-limit N`. When a limit is reached, no new API request is
+made and a `SessionLimit` event records the reason in the black box.
+
+Sensitive-risk events trigger a best-effort desktop alert before execution.
+Set `FLIGHT_RECORDER_NOTIFY=0` to disable alerts; notification failures never
+block the agent.
 
 ## Layout
 
-- `flight_recorder/hook.py` — the hook Claude Code invokes (PreToolUse,
-  PostToolUse, PreCompact, SessionStart/End, Stop). Exits 0 unconditionally.
+- `flight_recorder/hook.py` — the Codex hook invokes (PreToolUse,
+  PostToolUse, PreCompact, SessionStart, Stop). Exits 0 unconditionally.
 - `flight_recorder/reasoning.py` — extracts the reasoning window preceding
   an action from the live transcript; PreCompact snapshot shield.
 - `flight_recorder/risk.py` + `risk_rules.yaml` — deterministic risk tiering.
 - `flight_recorder/store.py` — SQLite (WAL) + JSONL mirror, no daemon.
 - `flight_recorder/viewer/` — FastAPI app + timeline/drawer UI.
-- `flight_recorder/cli.py` — `fr init|status|ui|grep`.
-- `bin/fr_hook_entry.py` — standalone entry point registered in
-  `.claude/settings.json` (works without the package being on PATH).
+- `flight_recorder/cli.py` — `fr init|status|ui|grep|test-hook|agent|api-ui`.
 
 ## Store location
 

@@ -33,6 +33,11 @@
   #search { flex: 1; background: var(--bg); border: 1px solid var(--border); color: var(--text);
     padding: 6px 10px; border-radius: 4px; font-family: inherit; }
   #search:focus { outline: 1px solid var(--write); }
+  #budget-widget { display: flex; align-items: center; gap: 8px; min-width: 220px; }
+  .budget-donut { width: 28px; height: 28px; border-radius: 50%; background: conic-gradient(var(--write) 0deg, var(--border) 0deg); position: relative; flex: 0 0 auto; }
+  .budget-donut::after { content: ""; position: absolute; inset: 6px; border-radius: 50%; background: var(--panel); }
+  .budget-copy { line-height: 1.2; font-size: 10px; color: var(--muted); white-space: nowrap; }
+  .budget-copy strong { display: block; color: var(--text); font-size: 11px; }
 
   .body { display: grid; grid-template-columns: 220px 1fr; min-height: 0; }
   .sidebar { border-right: 1px solid var(--border); padding: 12px; overflow-y: auto; }
@@ -86,7 +91,9 @@
   <div class="topbar">
     <span class="rec idle" id="rec-indicator">REC</span>
     <span class="brand">Flight Recorder</span>
-    <input id="search" placeholder="search: tool:bash risk:sensitive file:deploy.yaml session:abc" />
+    <span id="budget-widget"><span id="budget-donut" class="budget-donut"></span><span id="budget" class="budget-copy"><strong>Session budget</strong>No cap selected</span></span>
+    <span id="daily-usage" class="row-time">API tokens used today: 0</span>
+    <input id="search" placeholder="search: kind:bash tool:apply_patch risk:sensitive file:deploy.yaml" />
   </div>
   <div class="body">
     <div class="sidebar">
@@ -108,7 +115,7 @@
         <div class="empty" id="empty-state">
           No events yet. To start recording:<br><br>
           1. <code>fr init</code> — register hooks in this project<br>
-          2. Start a Claude Code session here<br>
+          2. Start a Codex session here and review <code>/hooks</code><br>
           3. Watch actions stream in below
         </div>
       </div>
@@ -125,7 +132,7 @@
   </div>
 </div>
 <script>
-const state = { events: [], selected: null, sessionFilter: "", riskFilter: new Set(["sensitive","network","exec","write","info"]),
+const state = { events: [], sessions: [], selected: null, sessionFilter: "", riskFilter: new Set(["sensitive","network","exec","write","info"]),
   paused: false, searchMode: false, tab: "what" };
 
 const timelineEl = document.getElementById("timeline");
@@ -164,7 +171,8 @@ function rowHtml(ev) {
     <div class="row-main">
       <div class="row-head">
         <span class="row-time">${fmtTime(ev.ts)}</span>
-        <span class="tool-badge">${ev.tool || ev.phase}</span>
+        <span class="tool-badge">${ev.tool_kind || ev.tool || ev.phase}</span>
+        ${ev.tool_kind && ev.tool && ev.tool_kind.toLowerCase() !== ev.tool.toLowerCase() ? `<span class="row-time">${escapeHtml(ev.tool)}</span>` : ""}
         <span class="summary">${escapeHtml(summaryFor(ev))}</span>
       </div>
       ${why ? `<div class="why-line">↳ why: ${escapeHtml(why)}</div>` : ""}
@@ -221,7 +229,7 @@ function renderDrawer() {
       html = `<div class="badge ok">captured live before compaction</div>${escapeHtml(ev.reasoning_text || "(none)")}`;
     }
   } else if (state.tab === "context") {
-    html = `session   ${ev.session_id}\nbranch    ${ev.git_branch || "-"}\nhead      ${ev.git_head || "-"}\ndirty     ${ev.git_dirty ? "yes" : "no"}\nphase     ${ev.phase}\nrisk      ${ev.risk}${ev.risk_reasons && ev.risk_reasons.length ? "  (" + ev.risk_reasons.join(", ") + ")" : ""}`;
+    html = `session   ${ev.session_id}\nturn      ${ev.turn_id || "-"}\ncall      ${ev.tool_use_id || "-"}\nprovider  ${ev.provider || "-"}\nmodel     ${ev.model || "-"}\ncategory  ${ev.tool_kind || "-"}\ntokens    ${ev.token_count || 0}\nraw tool  ${ev.tool || "-"}\nbranch    ${ev.git_branch || "-"}\nhead      ${ev.git_head || "-"}\ndirty     ${ev.git_dirty ? "yes" : "no"}\nphase     ${ev.phase}\nrisk      ${ev.risk}${ev.risk_reasons && ev.risk_reasons.length ? "  (" + ev.risk_reasons.join(", ") + ")" : ""}\nalert     ${ev.notification_sent ? "desktop notification sent" : "-"}`;
   } else if (state.tab === "result") {
     let res = ev.result_json;
     try { res = JSON.stringify(JSON.parse(ev.result_json), null, 2); } catch {}
@@ -244,18 +252,48 @@ timelineEl.addEventListener("scroll", () => {
 async function loadSessions() {
   const res = await fetch("/api/sessions");
   const sessions = await res.json();
+  state.sessions = sessions;
   const list = document.getElementById("session-list");
   list.innerHTML = sessions.map(s => `<div class="session-item" data-session="${s.id}">
-    ${s.id.slice(0,8)} · ${s.event_count} evt${s.last_event_ts ? " · " + fmtTime(s.last_event_ts) : ""}
+    ${s.id.slice(0,8)} · ${s.event_count} evt${s.last_event_ts ? " · " + fmtTime(s.last_event_ts) : ""}${s.token_used ? " · " + s.token_used + " tok" : ""}${s.token_limit ? "/" + s.token_limit : ""}
   </div>`).join("");
   document.querySelectorAll(".session-item").forEach(el => {
     el.addEventListener("click", () => {
       document.querySelectorAll(".session-item").forEach(x => x.classList.remove("active"));
       el.classList.add("active");
       state.sessionFilter = el.dataset.session;
+      renderBudget();
       render();
     });
   });
+  renderBudget();
+}
+
+function renderBudget() {
+  const selected = state.sessionFilter
+    ? state.sessions.find(s => s.id === state.sessionFilter)
+    : (state.sessions.find(s => s.token_limit) || state.sessions[0]);
+  const donut = document.getElementById("budget-donut");
+  const copy = document.getElementById("budget");
+  if (!selected || !selected.token_limit) {
+    donut.style.background = "conic-gradient(var(--border) 0deg, var(--border) 360deg)";
+    copy.innerHTML = `<strong>Session budget</strong>No token cap selected`;
+    return;
+  }
+  const used = Number(selected.token_used || 0);
+  const limit = Number(selected.token_limit);
+  const left = Math.max(0, limit - used);
+  const percent = Math.round((left / limit) * 100);
+  donut.style.background = `conic-gradient(var(--write) ${percent * 3.6}deg, var(--border) 0deg)`;
+  copy.innerHTML = `<strong>${left.toLocaleString()} tokens left</strong>${percent}% remaining · ${used.toLocaleString()} used`;
+}
+
+async function loadUsage() {
+  try {
+    const res = await fetch("/api/usage");
+    const usage = await res.json();
+    document.getElementById("daily-usage").textContent = `API tokens used today: ${(usage.token_count || 0).toLocaleString()}`;
+  } catch {}
 }
 
 document.querySelectorAll("#filters input").forEach(cb => {
@@ -316,9 +354,12 @@ async function loadInitialEvents() {
 
 async function init() {
   await loadSessions();
+  renderBudget();
   await loadInitialEvents();
+  await loadUsage();
   connectStream();
   setInterval(loadSessions, 5000);
+  setInterval(loadUsage, 5000);
 }
 init();
 </script>

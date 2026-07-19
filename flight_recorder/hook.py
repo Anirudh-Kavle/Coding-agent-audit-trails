@@ -1,4 +1,4 @@
-"""fr-hook: the single fast entry point Claude Code invokes for every event.
+"""Codex hook entry point for every supported lifecycle event.
 
 Prime directive: exit 0, unconditionally. A recorder that can break the
 pilot's controls is worse than no recorder. Every exception is swallowed
@@ -10,15 +10,15 @@ import json
 import sys
 import time
 
-from . import gitstate, reasoning, risk, store
+from . import gitstate, notifier, reasoning, risk, store, tools
 
 PHASE_MAP = {
     "PreToolUse": "pre",
     "PostToolUse": "post",
     "PreCompact": "compact",
     "SessionStart": "session",
-    "SessionEnd": "session",
     "Stop": "session",
+    "SubagentStart": "session",
     "SubagentStop": "session",
     "UserPromptSubmit": "session",
 }
@@ -35,14 +35,18 @@ def _truncate(obj, max_len: int = 16 * 1024) -> tuple[str, bool]:
     return text, False
 
 
-FILE_ARG_TOOLS = {"Edit", "Write", "NotebookEdit"}
+def _provider(payload: dict) -> str:
+    return "codex"
 
 
-def _files_touched(tool_name: str | None, tool_input) -> str | None:
-    if tool_name not in FILE_ARG_TOOLS or not isinstance(tool_input, dict):
-        return None
-    path = tool_input.get("file_path") or tool_input.get("notebook_path")
-    return json.dumps([path]) if path else None
+def _result_ok(response) -> int:
+    if isinstance(response, dict):
+        if response.get("error") or response.get("success") is False:
+            return 0
+        exit_code = response.get("exit_code", response.get("exitCode"))
+        if isinstance(exit_code, int):
+            return 1 if exit_code == 0 else 0
+    return 1
 
 
 def _handle(payload: dict) -> None:
@@ -62,9 +66,6 @@ def _handle(payload: dict) -> None:
     try:
         store.upsert_session(conn, session_id, ts, cwd, git.get("git_repo"), payload.get("source"))
 
-        if hook_event_name == "SessionEnd":
-            store.mark_session_ended(conn, session_id, ts)
-
         if hook_event_name == "PreCompact":
             reasoning.snapshot_transcript(transcript_path, session_id, store.SNAPSHOTS_DIR)
 
@@ -73,25 +74,36 @@ def _handle(payload: dict) -> None:
 
         reasoning_text, capture_gap = (None, True)
         if phase == "pre" and tool_name:
-            reasoning_text, capture_gap = reasoning.extract_reasoning(transcript_path)
+            tool_input = payload.get("tool_input")
+            description = tool_input.get("description") if isinstance(tool_input, dict) else None
+            if isinstance(description, str) and description.strip():
+                reasoning_text, capture_gap = description.strip(), False
+            else:
+                reasoning_text, capture_gap = reasoning.extract_reasoning(transcript_path)
 
         risk_tier, risk_reasons = "info", []
         if tool_name:
             risk_tier, risk_reasons = risk.classify(tool_name, arguments_text)
 
+        notification_sent = 0
+        if phase == "pre" and risk_tier == "sensitive":
+            notification_sent = 1 if notifier.notify_sensitive(tool_name, risk_reasons) else 0
+
         exit_ok = None
         if phase == "post":
-            resp = payload.get("tool_response")
-            if isinstance(resp, dict) and "error" in resp:
-                exit_ok = 0
-            else:
-                exit_ok = 1
+            exit_ok = _result_ok(payload.get("tool_response"))
 
         event = {
             "session_id": session_id,
             "ts": ts,
             "phase": phase,
             "tool": tool_name,
+            "tool_kind": tools.action_kind(tool_name, payload.get("tool_input")),
+            "tool_use_id": payload.get("tool_use_id"),
+            "turn_id": payload.get("turn_id"),
+            "provider": _provider(payload),
+            "model": payload.get("model"),
+            "notification_sent": notification_sent,
             "arguments_json": arguments_text + ("...[truncated]" if args_truncated else ""),
             "result_json": result_text + ("...[truncated]" if result_truncated else ""),
             "exit_ok": exit_ok,
@@ -102,10 +114,16 @@ def _handle(payload: dict) -> None:
             "git_branch": git.get("git_branch"),
             "git_head": git.get("git_head"),
             "git_dirty": git.get("git_dirty"),
-            "files_touched": _files_touched(tool_name, payload.get("tool_input")),
+            "files_touched": tools.files_touched(tool_name, payload.get("tool_input")),
         }
 
-        pending = store.find_pending_pre_event(conn, session_id, tool_name) if phase == "post" and tool_name else None
+        pending = None
+        if phase == "post" and tool_name:
+            tool_use_id = payload.get("tool_use_id")
+            if tool_use_id:
+                pending = store.find_pre_event_by_tool_use_id(conn, session_id, tool_use_id)
+            if pending is None and not tool_use_id:
+                pending = store.find_pending_pre_event(conn, session_id, tool_name)
 
         if pending is not None:
             store.update_event_result(conn, pending["id"], event["result_json"], event["exit_ok"])

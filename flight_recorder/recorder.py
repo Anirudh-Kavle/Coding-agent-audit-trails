@@ -8,7 +8,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
-from . import gitstate, risk, store
+from . import gitstate, notifier, risk, store, tools
 
 
 def _now_ms() -> int:
@@ -56,11 +56,20 @@ class FlightRecorder:
     """Record tool calls without coupling capture to a model provider SDK."""
 
     def __init__(self, session_id: str | None = None, *, cwd: str | Path | None = None,
-                 source: str = "api") -> None:
+                 source: str = "api", model: str | None = None) -> None:
         self.session_id = session_id or str(uuid.uuid4())
         self.cwd = str(cwd or Path.cwd())
         self.source = source
+        self.model = model
         store.init_db()
+        ts = _now_ms()
+        git = gitstate.capture(self.cwd)
+        conn = store.get_conn()
+        try:
+            store.upsert_session(conn, self.session_id, ts, self.cwd, git.get("git_repo"), self.source)
+            conn.commit()
+        finally:
+            conn.close()
 
     def start_action(self, tool: str, arguments: Any, *, reasoning_text: str | None = None,
                      action_id: str | None = None) -> ActionHandle:
@@ -70,6 +79,7 @@ class FlightRecorder:
         git = gitstate.capture(self.cwd)
         arguments_text = _json(arguments)
         tier, reasons = risk.classify(tool, arguments_text)
+        notification_sent = 1 if tier == "sensitive" and notifier.notify_sensitive(tool, reasons) else 0
         why = reasoning_text.strip() if reasoning_text and reasoning_text.strip() else None
         event = {
             "session_id": self.session_id,
@@ -78,6 +88,10 @@ class FlightRecorder:
             "completed_at": None,
             "phase": "pre",
             "tool": tool,
+            "tool_kind": tools.action_kind(tool, arguments),
+            "provider": self.source,
+            "model": self.model,
+            "notification_sent": notification_sent,
             "arguments_json": arguments_text,
             "result_json": "",
             "exit_ok": None,
@@ -88,7 +102,7 @@ class FlightRecorder:
             "git_branch": git.get("git_branch"),
             "git_head": git.get("git_head"),
             "git_dirty": git.get("git_dirty"),
-            "files_touched": None,
+            "files_touched": tools.files_touched(tool, arguments),
         }
         conn = store.get_conn()
         try:
@@ -100,3 +114,26 @@ class FlightRecorder:
         event["id"] = event_id
         store.append_jsonl(event)
         return ActionHandle(event_id, action_id, self.session_id, tool)
+
+    def record_session_event(self, reason: str, *, usage: dict | None = None,
+                             token_count: int = 0) -> int:
+        ts = _now_ms()
+        event = {
+            "session_id": self.session_id, "ts": ts, "phase": "session",
+            "tool": "SessionLimit", "tool_kind": "other", "provider": self.source,
+            "model": self.model, "arguments_json": _json({"reason": reason}),
+            "result_json": "", "exit_ok": 0, "reasoning_text": reason,
+            "risk": "info", "risk_reasons": "[]", "capture_gap": 0,
+            "token_count": token_count, "usage_json": _json(usage or {}),
+            "git_branch": None, "git_head": None, "git_dirty": None,
+            "files_touched": None,
+        }
+        conn = store.get_conn()
+        try:
+            event_id = store.insert_event(conn, event)
+            conn.commit()
+        finally:
+            conn.close()
+        event["id"] = event_id
+        store.append_jsonl(event)
+        return event_id

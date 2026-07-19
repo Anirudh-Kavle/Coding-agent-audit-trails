@@ -6,6 +6,7 @@ import asyncio
 import json
 import re
 import sqlite3
+from datetime import date
 from pathlib import Path
 
 from fastapi import FastAPI, Query
@@ -47,6 +48,7 @@ def list_sessions() -> list[dict]:
         rows = conn.execute(
             """
             SELECT s.id, s.started_at, s.ended_at, s.cwd, s.git_repo, s.source,
+                   s.token_limit, s.time_limit_s, s.token_used,
                    COUNT(e.id) as event_count, MAX(e.ts) as last_event_ts
             FROM sessions s
             LEFT JOIN events e ON e.session_id = s.id
@@ -55,6 +57,16 @@ def list_sessions() -> list[dict]:
             """
         ).fetchall()
         return [dict(r) for r in rows]
+    finally:
+        conn.close()
+
+
+@app.get("/api/usage")
+def usage() -> dict:
+    conn = _conn()
+    try:
+        row = conn.execute("SELECT day, token_count, updated_at FROM api_usage WHERE day = ?", (date.today().isoformat(),)).fetchone()
+        return dict(row) if row else {"day": date.today().isoformat(), "token_count": 0, "updated_at": None}
     finally:
         conn.close()
 
@@ -115,6 +127,9 @@ def search(q: str = "", limit: int = 200) -> list[dict]:
         if "tool" in qualifiers:
             conditions.append("LOWER(tool) = LOWER(?)")
             params.append(qualifiers["tool"])
+        if "kind" in qualifiers:
+            conditions.append("LOWER(tool_kind) = LOWER(?)")
+            params.append(qualifiers["kind"])
         if "session" in qualifiers:
             conditions.append("session_id LIKE ?")
             params.append(qualifiers["session"] + "%")

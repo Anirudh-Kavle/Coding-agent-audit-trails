@@ -1,4 +1,4 @@
-"""Reasoning-window extraction from a live Claude Code transcript (F2).
+"""Reasoning-window extraction from a live Codex transcript (F2).
 
 Defensive by design (per spec: "verbatim > clever", never trust the
 shape). This has NOT yet been validated against real transcript
@@ -97,7 +97,7 @@ def extract_reasoning(transcript_path: str | None) -> tuple[str | None, bool]:
 
 
 def snapshot_transcript(transcript_path: str | None, session_id: str, snapshots_dir: Path) -> Path | None:
-    """PreCompact shield: copy the transcript before Claude Code compacts it."""
+    """PreCompact shield: copy the transcript before Codex compacts it."""
     if not transcript_path:
         return None
     src = Path(transcript_path)

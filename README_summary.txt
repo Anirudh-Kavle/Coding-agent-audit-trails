@@ -1,6 +1,6 @@
 FLIGHT RECORDER — Summary
 
-What it is: Local, real-time black box for Claude Code sessions. Logs every
+What it is: Local, real-time black box for Codex sessions. Logs every
 consequential action (shell commands, file edits, network calls, credential
 ops) with the reasoning behind it, in a local, append-only, greppable store.
 
@@ -18,7 +18,7 @@ Usage:
   fr grep    - grep across JSONL mirror
 
 Key files:
-  hook.py       - Claude Code hook entry (Pre/PostToolUse, PreCompact, etc.)
+  hook.py       - Codex hook entry (Pre/PostToolUse, PreCompact, etc.)
   reasoning.py  - extracts reasoning preceding an action
   risk.py       - deterministic risk tiering
   store.py      - SQLite (WAL) + JSONL mirror
