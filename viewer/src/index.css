@@ -43,6 +43,9 @@ body {
   font-family: var(--font-sans);
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
+  /* Safety net: wide content (long commands/JSON in the drawer) must scroll
+     inside its own overflow-x-auto container, never widen the page itself. */
+  overflow-x: hidden;
 }
 
 /* One sanctioned pulse: sensitive-row arrival + REC dot. Reduced-motion kills it. */

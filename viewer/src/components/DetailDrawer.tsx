@@ -90,7 +90,7 @@ export function DetailDrawer({ event, onClose }: Props) {
         </div>
 
         {/* Body */}
-        <div className="min-h-0 flex-1 overflow-y-auto p-5">
+        <div className="min-h-0 min-w-0 flex-1 overflow-y-auto p-5">
           {tab === "what" && <WhatTab event={event} />}
           {tab === "why" && <WhyTab event={event} />}
           {tab === "context" && <ContextTab event={event} />}
@@ -146,7 +146,7 @@ function WhyTab({ event }: { event: FlightEvent }) {
 
 function ContextTab({ event }: { event: FlightEvent }) {
   return (
-    <dl className="grid grid-cols-[8rem_1fr] gap-x-4 gap-y-2.5 text-sm">
+    <dl className="grid grid-cols-[8rem_minmax(0,1fr)] gap-x-4 gap-y-2.5 text-sm">
       <Row k="git branch" v={event.git_branch ?? "—"} mono />
       <Row k="HEAD" v={`${shortSha(event.git_head)}${event.git_dirty ? "  (dirty)" : ""}`} mono />
       <Row k="session" v={event.session_id} mono />
@@ -191,7 +191,7 @@ function Row({ k, v, mono }: { k: string; v: string; mono?: boolean }) {
   return (
     <>
       <dt className="font-mono text-[10px] uppercase tracking-wider text-ink-faint">{k}</dt>
-      <dd className={mono ? "font-mono text-ink" : "text-ink"}>{v}</dd>
+      <dd className={[mono ? "font-mono" : "", "text-ink break-all"].join(" ")}>{v}</dd>
     </>
   );
 }

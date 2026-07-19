@@ -22,7 +22,12 @@ BARE_HOOK_EVENTS = ["PreCompact", "SessionStart", "SessionEnd", "Stop"]
 
 
 def _hook_command() -> str:
-    return f'"{sys.executable}" "{HOOK_ENTRY}"'
+    # Resolve symlinks (e.g. .venv/bin/python -> python3.13 -> the real
+    # framework binary) so re-running `fr init` under a different interpreter
+    # alias always produces the same command string — otherwise _merge_hooks'
+    # dedupe check can't tell it's already registered and the hook fires twice.
+    interpreter = Path(sys.executable).resolve()
+    return f'"{interpreter}" "{HOOK_ENTRY}"'
 
 
 def _settings_path(project: bool) -> Path:

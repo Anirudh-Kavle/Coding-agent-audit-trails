@@ -73,7 +73,9 @@ def _handle(payload: dict) -> None:
 
         reasoning_text, capture_gap = (None, True)
         if phase == "pre" and tool_name:
-            reasoning_text, capture_gap = reasoning.extract_reasoning(transcript_path)
+            reasoning_text, capture_gap = reasoning.extract_reasoning(
+                transcript_path, payload.get("tool_use_id")
+            )
 
         risk_tier, risk_reasons = "info", []
         if tool_name:
@@ -103,22 +105,58 @@ def _handle(payload: dict) -> None:
             "git_head": git.get("git_head"),
             "git_dirty": git.get("git_dirty"),
             "files_touched": _files_touched(tool_name, payload.get("tool_input")),
+            "tool_use_id": payload.get("tool_use_id"),
         }
 
         pending = store.find_pending_pre_event(conn, session_id, tool_name) if phase == "post" and tool_name else None
 
         if pending is not None:
             store.update_event_result(conn, pending["id"], event["result_json"], event["exit_ok"])
-            conn.commit()
             merged = dict(pending)
             merged["result_json"] = event["result_json"]
             merged["exit_ok"] = event["exit_ok"]
+
+            # Self-heal: the PreToolUse capture can miss because the transcript
+            # file hadn't been written past this call yet (the hook payload is
+            # live in-memory dispatch; the file write lags it). By PostToolUse
+            # time the tool has already run, giving the writer more real time
+            # to catch up — worth one more honest attempt before giving up.
+            if pending["capture_gap"]:
+                healed_text, healed_gap = reasoning.extract_reasoning(
+                    transcript_path, payload.get("tool_use_id")
+                )
+                if not healed_gap and healed_text:
+                    store.update_event_reasoning(conn, pending["id"], healed_text)
+                    merged["reasoning_text"] = healed_text
+                    merged["capture_gap"] = 0
+
+            current_id = pending["id"]
             store.append_jsonl(merged)
         else:
             row_id = store.insert_event(conn, event)
-            conn.commit()
             event["id"] = row_id
+            current_id = row_id
             store.append_jsonl(event)
+
+        # Opportunistic heal: PostToolUse isn't guaranteed to fire at all (seen
+        # in practice — a malformed command's PreToolUse never got a matching
+        # PostToolUse, so the pairing self-heal above never got a chance to
+        # run). Any hook firing in this session is another opportunity to
+        # retry the most recent still-gapped call, bounded to a recency
+        # window so one permanently-unrecoverable gap doesn't cost every
+        # later hook a lookup for the rest of a long session.
+        if transcript_path:
+            stale = store.find_stale_gap(conn, session_id, ts)
+            if stale is not None and stale["id"] != current_id:
+                healed_text, healed_gap = reasoning.extract_reasoning(transcript_path, stale["tool_use_id"])
+                if not healed_gap and healed_text:
+                    store.update_event_reasoning(conn, stale["id"], healed_text)
+                    healed_row = dict(stale)
+                    healed_row["reasoning_text"] = healed_text
+                    healed_row["capture_gap"] = 0
+                    store.append_jsonl(healed_row)
+
+        conn.commit()
     finally:
         conn.close()
 

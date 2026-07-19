@@ -23,7 +23,8 @@ CREATE TABLE IF NOT EXISTS events (
     git_branch TEXT,
     git_head TEXT,
     git_dirty INTEGER,
-    files_touched TEXT
+    files_touched TEXT,
+    tool_use_id TEXT
 );
 
 CREATE INDEX IF NOT EXISTS idx_events_session ON events(session_id);

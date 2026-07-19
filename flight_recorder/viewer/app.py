@@ -56,7 +56,11 @@ def session_events(session_id: str, risk: str | None = None, limit: int = 500) -
     conn = _conn()
     try:
         # session_id "all" means no session filter — the viewer's full-history load.
-        where: list[str] = []
+        # tool IS NOT NULL excludes toolless lifecycle bookkeeping (SessionStart/
+        # End, Stop, PreCompact) — real audit rows, just not "actions" the
+        # timeline has a WHAT/WHY to show; they'd otherwise render as a bare
+        # "null" tool badge with nothing else in it.
+        where: list[str] = ["tool IS NOT NULL"]
         params: list = []
         if session_id != "all":
             where.append("session_id = ?")
@@ -95,7 +99,7 @@ def search(q: str = "", limit: int = 200) -> list[dict]:
 
     conn = _conn()
     try:
-        conditions = []
+        conditions = ["tool IS NOT NULL"]
         params: list = []
 
         if free_text:
@@ -141,7 +145,7 @@ async def stream():
             last_id = conn.execute("SELECT COALESCE(MAX(id), 0) FROM events").fetchone()[0]
             while True:
                 rows = conn.execute(
-                    "SELECT * FROM events WHERE id > ? ORDER BY id ASC", (last_id,)
+                    "SELECT * FROM events WHERE id > ? AND tool IS NOT NULL ORDER BY id ASC", (last_id,)
                 ).fetchall()
                 for row in rows:
                     d = _event_to_dict(row)

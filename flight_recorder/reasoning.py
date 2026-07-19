@@ -36,8 +36,31 @@ def _parse_entries(lines: list[str]) -> list[dict]:
     return entries
 
 
-def extract_reasoning(transcript_path: str | None) -> tuple[str | None, bool]:
-    """Returns (reasoning_text, capture_gap)."""
+def _find_tool_use_index(entries: list[dict], tool_use_id: str) -> int | None:
+    """Index of the entry containing a tool_use block with this id, if any."""
+    for i, entry in enumerate(entries):
+        if not isinstance(entry, dict):
+            continue
+        message = entry.get("message") if isinstance(entry.get("message"), dict) else entry
+        content = message.get("content") if isinstance(message, dict) else None
+        if not isinstance(content, list):
+            continue
+        for block in content:
+            if isinstance(block, dict) and block.get("type") == "tool_use" and block.get("id") == tool_use_id:
+                return i
+    return None
+
+
+def extract_reasoning(transcript_path: str | None, tool_use_id: str | None = None) -> tuple[str | None, bool]:
+    """Returns (reasoning_text, capture_gap).
+
+    The hook payload (tool_name, tool_input, tool_use_id) comes from Claude
+    Code's live in-memory dispatch; the transcript *file* write can lag
+    behind it. If the file doesn't yet contain this exact tool_use_id,
+    anything sitting at its tail belongs to an earlier, already-finished
+    turn — attaching it here would misattribute stale reasoning to this
+    action. An honest gap beats a confident wrong answer.
+    """
     if not transcript_path:
         return None, True
 
@@ -52,6 +75,16 @@ def extract_reasoning(transcript_path: str | None) -> tuple[str | None, bool]:
 
     if not entries:
         return None, True
+
+    if tool_use_id:
+        idx = _find_tool_use_index(entries, tool_use_id)
+        if idx is None:
+            return None, True  # freshness gate: file hasn't caught up to this call yet
+        # Anchor the walk to this call's position — ignore anything appended
+        # after it (its own tool_result almost always lands here by the time
+        # a PostToolUse self-heal retry runs), so the search isn't blocked by
+        # a boundary that belongs to a *later* point than the call itself.
+        entries = entries[: idx + 1]
 
     collected: list[str] = []  # accumulated newest-first, reversed at the end
 
@@ -77,11 +110,10 @@ def extract_reasoning(transcript_path: str | None) -> tuple[str | None, bool]:
             if texts:
                 collected.append("\n".join(texts))
         elif role == "user":
-            has_tool_result = any(
-                isinstance(block, dict) and block.get("type") == "tool_result" for block in content
-            )
-            if has_tool_result:
-                break  # boundary: the prior action's result — reasoning window ends here
+            # Boundary: a tool result (the prior action's output) or a fresh
+            # human prompt both end the window — either way, anything
+            # earlier belongs to a different action or a different turn.
+            break
 
     if not collected:
         return None, True
