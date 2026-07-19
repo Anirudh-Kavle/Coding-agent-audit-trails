@@ -143,6 +143,20 @@ export async function search(query: string): Promise<FlightEvent[]> {
   return raw.map(normalizeEvent);
 }
 
+export async function getRecordingPaused(): Promise<boolean> {
+  const res = await fetch(`${API_BASE}/recording`);
+  if (!res.ok) throw new Error("Failed to fetch recording status");
+  const data: { paused: boolean } = await res.json();
+  return data.paused;
+}
+
+export async function setRecordingPaused(paused: boolean): Promise<boolean> {
+  const res = await fetch(`${API_BASE}/recording/${paused ? "pause" : "resume"}`, { method: "POST" });
+  if (!res.ok) throw new Error("Failed to update recording status");
+  const data: { paused: boolean } = await res.json();
+  return data.paused;
+}
+
 export function streamEvents(
   onEvent: (event: FlightEvent) => void,
   onError?: (error: Error) => void

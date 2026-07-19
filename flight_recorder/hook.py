@@ -46,6 +46,9 @@ def _files_touched(tool_name: str | None, tool_input) -> str | None:
 
 
 def _handle(payload: dict) -> None:
+    if store.is_paused():
+        return
+
     hook_event_name = payload.get("hook_event_name", "Unknown")
     store.append_raw_payload(hook_event_name, payload)
 

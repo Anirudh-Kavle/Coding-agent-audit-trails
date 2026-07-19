@@ -16,6 +16,7 @@ EVENTS_DIR = STORE_DIR / "events"
 SNAPSHOTS_DIR = STORE_DIR / "snapshots"
 DEBUG_LOG = STORE_DIR / "debug.log"
 RAW_PAYLOADS_LOG = STORE_DIR / "debug" / "raw_payloads.jsonl"
+PAUSE_FLAG = STORE_DIR / "paused"
 
 SCHEMA_PATH = Path(__file__).with_name("schema.sql")
 
@@ -25,6 +26,21 @@ def ensure_dirs() -> None:
     EVENTS_DIR.mkdir(parents=True, exist_ok=True)
     SNAPSHOTS_DIR.mkdir(parents=True, exist_ok=True)
     RAW_PAYLOADS_LOG.parent.mkdir(parents=True, exist_ok=True)
+
+
+def is_paused() -> bool:
+    return PAUSE_FLAG.exists()
+
+
+def set_paused(paused: bool) -> None:
+    """Toggled from the viewer's record button. A bare marker file, not a DB
+    row — the hook must be able to check this before it ever touches SQLite,
+    including while the DB is mid-wipe."""
+    ensure_dirs()
+    if paused:
+        PAUSE_FLAG.touch()
+    else:
+        PAUSE_FLAG.unlink(missing_ok=True)
 
 
 def _migrate(conn: sqlite3.Connection) -> None:
