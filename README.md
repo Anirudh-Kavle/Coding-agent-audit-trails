@@ -1,5 +1,65 @@
 # Flight Recorder
 
+## Quickstart — run everything from a fresh clone
+
+Prerequisites: Python 3.11+, Node 18+, git.
+
+```bash
+# 1. Python package + `fr` CLI
+pip install -e ".[dev]"
+
+# 2. Build the web viewer (fr ui serves viewer/dist)
+cd viewer && npm install && npm run build && cd ..
+
+# 3. Register hooks + create the local store at ~/.flight-recorder
+fr init            # Codex hooks -> ./.codex/hooks.json
+fr test-hook       # optional: record a synthetic event to confirm capture
+
+# 4. Open the live timeline
+fr ui              # http://127.0.0.1:7878
+```
+
+Recording Claude Code sessions: create `.claude/settings.json` in the project
+(it is gitignored — per-machine config) with `fr-hook --provider claude` as a
+command hook for each event you want captured:
+
+```json
+{
+  "hooks": {
+    "PreToolUse":  [{"matcher": ".*", "hooks": [{"type": "command", "command": "fr-hook --provider claude", "timeout": 5}]}],
+    "PostToolUse": [{"matcher": ".*", "hooks": [{"type": "command", "command": "fr-hook --provider claude", "timeout": 5}]}],
+    "SessionStart": [{"hooks": [{"type": "command", "command": "fr-hook --provider claude", "timeout": 5}]}],
+    "UserPromptSubmit": [{"hooks": [{"type": "command", "command": "fr-hook --provider claude", "timeout": 5}]}],
+    "Stop": [{"hooks": [{"type": "command", "command": "fr-hook --provider claude", "timeout": 5}]}]
+  }
+}
+```
+
+Optional — local AI session summaries (free, fully offline, ~30s per summary
+on CPU). Adds a "Generate session summary" button to the viewer that writes
+3-5 grounded sentences with clickable `[event N]` citations:
+
+```bash
+pip install llama-cpp-python --only-binary :all: \
+    --extra-index-url https://abetlen.github.io/llama-cpp-python/whl/cpu
+python scripts/get_model.py    # one-time ~1 GB download to ~/.flight-recorder/models
+```
+
+Optional — the API-backed agent (needs `OPENAI_API_KEY` in the env or `.env`):
+
+```bash
+fr api-ui --token-limit 50000 --time-limit 600
+```
+
+Viewer feature tour: sessions grouped by project (repo/folder) in the sidebar
+with folder sub-groups for multiple checkouts; deterministic per-scope stat
+line (actions / commands / edits / failed / sensitive); full-database search
+with qualifiers (`tool:` `risk:` `file:` `session:` `exit:` `provider:`
+`after:` `before:`); per-session token/time budgets editable from the top bar;
+recording pause/resume; local-model summaries with verified citations.
+
+---
+
 Codex support: run `fr init` to register project hooks in `.codex/hooks.json`.
 Codex `PreToolUse`/`PostToolUse` events preserve the exact raw `tool_name` and
 store a normalized `tool_kind`: `bash`, `edit`, `write`, `read`, `webfetch`,
