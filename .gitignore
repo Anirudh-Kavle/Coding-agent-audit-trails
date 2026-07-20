@@ -38,3 +38,6 @@ events/
 
 # OS
 .DS_Store
+
+# Local Claude Code config (hooks are machine-specific)
+.claude/
