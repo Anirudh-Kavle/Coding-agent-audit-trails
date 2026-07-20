@@ -38,6 +38,9 @@ interface RawSession {
   failed_count?: number;
   sensitive_count?: number;
   git_branch?: string | null;
+  project_key?: string;
+  project?: string;
+  last_event_ts?: number | null;
 }
 
 // Parse a JSON-string column without ever throwing. The hook truncates
@@ -112,6 +115,9 @@ export function normalizeSession(raw: RawSession): Session {
     git_repo: raw.git_repo ?? undefined,
     source: SOURCE_MAP[raw.source ?? ""] ?? "interactive",
     live: raw.ended_at == null,
+    project_key: raw.project_key,
+    project: raw.project,
+    last_event_ts: raw.last_event_ts ?? undefined,
     stats:
       raw.action_count != null
         ? {

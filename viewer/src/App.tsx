@@ -6,7 +6,7 @@ import { useKeyboardNav } from "./hooks/useKeyboardNav";
 import { byNewest } from "./lib/format";
 import { filterEvents } from "./lib/search";
 import { TopBar } from "./components/TopBar";
-import { SessionSidebar } from "./components/SessionSidebar";
+import { SessionSidebar, projectKeyOf, projectNameOf } from "./components/SessionSidebar";
 import { Timeline } from "./components/Timeline";
 import { DetailDrawer } from "./components/DetailDrawer";
 import { EmptyState } from "./components/EmptyState";
@@ -17,6 +17,8 @@ export default function App() {
   const { events, loading, lastArrivalId } = useEventStream();
   const [sessions, setSessions] = useState<Session[]>([]);
   const [selectedSession, setSelectedSession] = useState<string | null>(null);
+  const [selectedProject, setSelectedProject] = useState<string | null>(null);
+  const [selectedGroup, setSelectedGroup] = useState<string | null>(null);
   const [selectedId, setSelectedId] = useState<number | null>(null);
   const [drawerOpen, setDrawerOpen] = useState(false);
   const [search, setSearch] = useState("");
@@ -57,14 +59,32 @@ export default function App() {
     };
   }, [search, searching]);
 
-  // Filter pipeline: session scope → risk filter → search. Newest-first for the timeline.
+  // Scope hierarchy: session > folder/clone (project key) > project name
+  // (all folders of that name) > everything. A scope is just a session set.
+  const scopeSessionIds = useMemo(() => {
+    if (selectedSession) return null; // session filter handles it directly
+    if (selectedProject) {
+      return new Set(
+        sessions.filter((s) => projectKeyOf(s) === selectedProject).map((s) => s.id)
+      );
+    }
+    if (selectedGroup) {
+      return new Set(
+        sessions.filter((s) => projectNameOf(s) === selectedGroup).map((s) => s.id)
+      );
+    }
+    return null;
+  }, [sessions, selectedSession, selectedProject, selectedGroup]);
+
+  // Filter pipeline: scope → risk filter → search. Newest-first.
   const visible = useMemo(() => {
     let list = searching && remoteResults ? remoteResults : events;
     if (selectedSession) list = list.filter((e) => e.session_id === selectedSession);
+    else if (scopeSessionIds) list = list.filter((e) => scopeSessionIds.has(e.session_id));
     list = list.filter((e) => riskFilter.has(e.risk));
     if (searching && !remoteResults) list = filterEvents(list, search);
     return [...list].sort(byNewest);
-  }, [events, remoteResults, selectedSession, riskFilter, search, searching]);
+  }, [events, remoteResults, selectedSession, scopeSessionIds, riskFilter, search, searching]);
 
   // Search hits and summary citations can reference events outside the loaded
   // stream — check the remote result set and the citation-fetched event too.
@@ -133,6 +153,10 @@ export default function App() {
           sessions={sessions}
           selectedSession={selectedSession}
           onSelectSession={setSelectedSession}
+          selectedProject={selectedProject}
+          onSelectProject={setSelectedProject}
+          selectedGroup={selectedGroup}
+          onSelectGroup={setSelectedGroup}
           riskFilter={riskFilter}
           onToggleRisk={toggleRisk}
         />
@@ -140,11 +164,26 @@ export default function App() {
         <main className="relative flex min-h-0 min-w-0 flex-1 flex-col">
           <SessionStatsBar
             selectedSession={sessions.find((s) => s.id === selectedSession) ?? null}
-            sessions={sessions}
-            events={events}
+            scopeSessions={
+              scopeSessionIds ? sessions.filter((s) => scopeSessionIds.has(s.id)) : sessions
+            }
+            scopeLabel={
+              selectedProject
+                ? `folder ${selectedProject.replace(/[\\/]+$/, "").split(/[\\/]/).pop()}`
+                : selectedGroup
+                  ? `project ${selectedGroup}`
+                  : `all projects`
+            }
+            events={
+              scopeSessionIds ? events.filter((e) => scopeSessionIds.has(e.session_id)) : events
+            }
           />
           {selectedSession && (
-            <SessionSummaryPanel sessionId={selectedSession} onOpenEvent={openCitedEvent} />
+            <SessionSummaryPanel
+              sessionId={selectedSession}
+              lastEventTs={sessions.find((s) => s.id === selectedSession)?.last_event_ts}
+              onOpenEvent={openCitedEvent}
+            />
           )}
           <Timeline
             events={visible}

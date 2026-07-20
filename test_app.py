@@ -92,6 +92,14 @@ def test_sessions_include_deterministic_stat_counts(client):
     assert b["failed_count"] == 0
 
 
+def test_sessions_derive_project_from_repo_or_cwd(client):
+    sessions = {s["id"]: s for s in client.get("/api/sessions").json()}
+    # No git_repo seeded → falls back to cwd; display name is the basename.
+    assert sessions["sess_a"]["project_key"] == "/tmp/a"
+    assert sessions["sess_a"]["project"] == "a"
+    assert sessions["sess_b"]["project"] == "b"
+
+
 def test_root_serves_something(client):
     # dist mount when viewer/dist exists, JSON pointer otherwise — either way 200.
     assert client.get("/").status_code == 200

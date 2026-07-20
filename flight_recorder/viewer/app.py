@@ -59,7 +59,16 @@ def list_sessions() -> list[dict]:
             ORDER BY COALESCE(MAX(e.ts), s.started_at) DESC
             """
         ).fetchall()
-        return [dict(r) for r in rows]
+        sessions = [dict(r) for r in rows]
+        for s in sessions:
+            # Project identity is derived, never stored: the repo root when the
+            # session ran in one, the plain working folder otherwise. Grouping
+            # is therefore a view over existing stamps — old sessions group
+            # correctly with zero migration.
+            key = s.get("git_repo") or s.get("cwd") or ""
+            s["project_key"] = key or "unknown"
+            s["project"] = re.split(r"[\\/]", key.rstrip("\\/"))[-1] if key else "unknown"
+        return sessions
     finally:
         conn.close()
 

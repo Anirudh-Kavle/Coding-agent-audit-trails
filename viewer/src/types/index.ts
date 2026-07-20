@@ -38,6 +38,7 @@ export interface SessionSummary {
   text: string;
   model?: string | null;
   generated_at?: number | null;
+  legacy?: boolean; // pre-citation-pipeline summary of unknown provenance
 }
 
 export interface SummaryResponse {
@@ -56,6 +57,10 @@ export interface Session {
   label?: string; // human-friendly name for the sidebar
   live?: boolean; // currently recording
   stats?: SessionStats;
+  // Derived project identity: repo root when in git, else the working folder.
+  project_key?: string; // full path — the grouping key
+  project?: string; // folder/repo basename — the display name
+  last_event_ts?: number; // for summary staleness checks
 }
 
 export const RISK_TIERS: RiskTier[] = [

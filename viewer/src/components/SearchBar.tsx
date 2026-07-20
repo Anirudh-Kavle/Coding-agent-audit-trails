@@ -27,6 +27,7 @@ export const SearchBar = forwardRef<HTMLInputElement, Props>(
             value={value}
             onChange={(e) => onChange(e.target.value)}
             placeholder="search all sessions   tool:bash risk:sensitive exit:fail after:2026-07-01"
+            title="Searches every recorded session, not just what's on screen. Combine free text with qualifiers — click the chips below to insert one."
             className="w-full bg-transparent font-mono text-sm text-ink placeholder:text-ink-faint focus:outline-none"
             aria-label="Search events"
           />
@@ -51,7 +52,7 @@ export const SearchBar = forwardRef<HTMLInputElement, Props>(
               ))
             : !active &&
               SEARCH_QUALIFIERS.map((q) => (
-                <Chip key={q} onClick={() => append(q + ":")}>
+                <Chip key={q} title={QUALIFIER_HINT[q]} onClick={() => append(q + ":")}>
                   {q}:
                 </Chip>
               ))}
@@ -62,10 +63,30 @@ export const SearchBar = forwardRef<HTMLInputElement, Props>(
 );
 SearchBar.displayName = "SearchBar";
 
-function Chip({ children, onClick }: { children: React.ReactNode; onClick: () => void }) {
+const QUALIFIER_HINT: Record<string, string> = {
+  tool: "Filter by tool name, e.g. tool:bash or tool:edit",
+  risk: "Filter by risk tier, e.g. risk:sensitive",
+  file: "Actions that touched a file path, e.g. file:.env",
+  session: "Limit to one session by id prefix, e.g. session:1e5f",
+  exit: "exit:fail = actions that errored, exit:ok = succeeded",
+  provider: "Which agent recorded it, e.g. provider:claude or provider:codex",
+  after: "Only events on/after a date, e.g. after:2026-07-01",
+  before: "Only events before a date, e.g. before:2026-07-15",
+};
+
+function Chip({
+  children,
+  onClick,
+  title,
+}: {
+  children: React.ReactNode;
+  onClick: () => void;
+  title?: string;
+}) {
   return (
     <button
       onClick={onClick}
+      title={title}
       className="cursor-pointer rounded border border-border-soft bg-surface-2 px-2 py-0.5 font-mono text-xs text-ink-muted transition-colors hover:border-border hover:text-ink"
     >
       {children}

@@ -180,8 +180,12 @@ def summarize_session(session_id: str, *, llm=None) -> dict | None:
         f"Audit records for session {session_id}:\n{packed}\n\n"
         "Write a 3-5 sentence summary of this session: what the agent worked "
         "on (inferred only from the visible actions), what it changed or ran, "
-        "and any failures or sensitive actions. Cite records inline as "
-        "[event ID]. /no_think"
+        "and any failures or sensitive actions.\n"
+        "REQUIRED FORMAT: every sentence must include at least one inline "
+        "citation like [event 12] pointing at a record above. Example "
+        "sentence: 'The agent installed dependencies [event 12] and ran the "
+        "tests, which failed [event 15].' Citations go inside the sentences, "
+        "never in a list at the end. /no_think"
     )
 
     with _llm_lock:  # one llama.cpp context; concurrent calls would corrupt it
@@ -223,4 +227,6 @@ def load_cached_summary(conn, session_id: str) -> dict | None:
             return parsed
     except json.JSONDecodeError:
         pass
-    return {"text": str(row["summary"]), "model": None, "generated_at": None}
+    # Plain-string summaries predate this pipeline (no citations, unknown
+    # provenance) — flag them so the UI can suggest regenerating.
+    return {"text": str(row["summary"]), "model": None, "generated_at": None, "legacy": True}

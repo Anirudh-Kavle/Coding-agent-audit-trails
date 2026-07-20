@@ -24,6 +24,9 @@ def isolated_store(tmp_path, monkeypatch):
     monkeypatch.setattr(store, "SNAPSHOTS_DIR", tmp_path / "snapshots")
     monkeypatch.setattr(store, "DEBUG_LOG", tmp_path / "debug.log")
     monkeypatch.setattr(store, "RAW_PAYLOADS_LOG", tmp_path / "debug" / "raw_payloads.jsonl")
+    # Without this, a real paused recorder on the dev machine makes every
+    # hook call here a silent no-op and all assertions fail confusingly.
+    monkeypatch.setattr(store, "PAUSE_FLAG", tmp_path / "paused")
     store.init_db()
     return tmp_path
 
