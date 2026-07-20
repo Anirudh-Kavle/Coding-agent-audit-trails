@@ -141,6 +141,15 @@ export default function App() {
     },
   });
 
+  // Budget editing targets the selected session; with nothing selected, the
+  // first session that already has a limit, else the most recent one — so the
+  // editor can always open, including to SET a first-ever limit (previously it
+  // could only modify a limit created from the terminal).
+  const budgetSession =
+    (selectedSession ? sessions.find((x) => x.id === selectedSession) : undefined) ??
+    sessions.find((x) => x.token_limit) ??
+    sessions[0];
+
   return (
     <div className="flex h-full flex-col">
       <TopBar
@@ -149,13 +158,21 @@ export default function App() {
         search={search}
         onSearch={setSearch}
         onClearSearch={() => setSearch("")}
-        sessionBudget={(() => { const s = sessions.find((x) => x.token_limit); return s?.token_limit ? { id: s.id, used: s.token_used ?? 0, limit: s.token_limit, timeLimit: s.time_limit_s } : undefined; })()}
+        sessionBudget={
+          budgetSession
+            ? {
+                id: budgetSession.id,
+                used: budgetSession.token_used ?? 0,
+                limit: budgetSession.token_limit ?? 0,
+                timeLimit: budgetSession.time_limit_s,
+              }
+            : undefined
+        }
         dailyTokens={dailyTokens}
         onBudgetSaved={async (tokenLimit, timeLimit) => {
-          const s = sessions.find((x) => x.token_limit);
-          if (!s) return;
-          await updateBudget(s.id, tokenLimit, timeLimit);
-          setSessions((all) => all.map((x) => x.id === s.id ? { ...x, token_limit: tokenLimit ?? undefined, time_limit_s: timeLimit ?? undefined } : x));
+          if (!budgetSession) return;
+          await updateBudget(budgetSession.id, tokenLimit, timeLimit);
+          setSessions((all) => all.map((x) => x.id === budgetSession.id ? { ...x, token_limit: tokenLimit ?? undefined, time_limit_s: timeLimit ?? undefined } : x));
         }}
       />
 
