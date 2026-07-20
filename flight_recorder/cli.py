@@ -8,6 +8,7 @@ import shutil
 import sys
 import time
 import textwrap
+import threading
 import webbrowser
 from pathlib import Path
 
@@ -308,6 +309,33 @@ def cmd_api_ui(args: argparse.Namespace) -> None:
     print(styled(f"╰{line}╯", "cyan"))
     print(budget_panel())
     print(styled("Type a task, or /help for commands. Tool approvals are shown in yellow.", "dim"))
+
+    # The browser edits the same SQLite session row. Watch it while input()
+    # is blocked so a saved limit is reflected in this terminal immediately.
+    def watch_budget() -> None:
+        previous = (session.token_limit, session.time_limit_s)
+        while True:
+            time.sleep(0.75)
+            try:
+                conn = store.get_conn()
+                try:
+                    row = conn.execute("SELECT token_limit, time_limit_s FROM sessions WHERE id = ?",
+                                       (session.recorder.session_id,)).fetchone()
+                finally:
+                    conn.close()
+                if not row:
+                    continue
+                current = (row["token_limit"], row["time_limit_s"])
+                if current != previous:
+                    previous = current
+                    session.token_limit, session.time_limit_s = current
+                    print(f"\n{styled('limits updated from viewer', 'cyan')}\n{budget_panel()}")
+                    print(f"{styled('you', 'blue')}{styled(' › ', 'dim')}", end="", flush=True)
+            except Exception:
+                # The watcher must never interrupt the interactive agent.
+                pass
+
+    threading.Thread(target=watch_budget, daemon=True, name="flight-recorder-budget-watch").start()
     while True:
         try:
             task = input(f"\n{styled('you', 'blue')}{styled(' › ', 'dim')}").strip()

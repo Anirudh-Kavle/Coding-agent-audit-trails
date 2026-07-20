@@ -275,7 +275,21 @@ class ApiAgentSession:
             conn.close()
         self.inputs: list[Any] = []
 
+    def _sync_limits(self) -> None:
+        """Pick up budget edits made in the browser between turns."""
+        conn = store.get_conn()
+        try:
+            row = conn.execute("SELECT token_limit, time_limit_s, token_used FROM sessions WHERE id = ?",
+                               (self.recorder.session_id,)).fetchone()
+        finally:
+            conn.close()
+        if row:
+            self.token_limit = row["token_limit"]
+            self.time_limit_s = row["time_limit_s"]
+            self.token_used = max(self.token_used, int(row["token_used"] or 0))
+
     def _limit_reason(self) -> str | None:
+        self._sync_limits()
         if self.token_limit is not None and self.token_used >= self.token_limit:
             return f"Session token limit reached ({self.token_used}/{self.token_limit})."
         elapsed = limits.elapsed_seconds(self.started_monotonic)

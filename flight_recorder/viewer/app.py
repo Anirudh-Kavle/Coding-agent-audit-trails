@@ -9,7 +9,7 @@ import sqlite3
 from datetime import date
 from pathlib import Path
 
-from fastapi import FastAPI
+from fastapi import FastAPI, HTTPException
 from fastapi.responses import StreamingResponse
 from fastapi.staticfiles import StaticFiles
 
@@ -79,6 +79,36 @@ def usage() -> dict:
     try:
         row = conn.execute("SELECT day, token_count, updated_at FROM api_usage WHERE day = ?", (date.today().isoformat(),)).fetchone()
         return dict(row) if row else {"day": date.today().isoformat(), "token_count": 0, "updated_at": None}
+    finally:
+        conn.close()
+
+
+@app.patch("/api/sessions/{session_id}/budget")
+def update_budget(session_id: str, payload: dict) -> dict:
+    """Update the shared API session limits used by the terminal agent."""
+    def value(name: str):
+        raw = payload.get(name)
+        if raw in (None, "", 0, "0"):
+            return None
+        try:
+            number = int(raw)
+        except (TypeError, ValueError):
+            raise HTTPException(400, f"{name} must be a positive integer or null")
+        if number < 1:
+            raise HTTPException(400, f"{name} must be a positive integer or null")
+        return number
+
+    token_limit = value("token_limit")
+    time_limit_s = value("time_limit_s")
+    conn = _conn()
+    try:
+        if not conn.execute("SELECT 1 FROM sessions WHERE id = ?", (session_id,)).fetchone():
+            raise HTTPException(404, "Session not found")
+        conn.execute("UPDATE sessions SET token_limit = ?, time_limit_s = ? WHERE id = ?",
+                     (token_limit, time_limit_s, session_id))
+        conn.commit()
+        row = conn.execute("SELECT id, token_limit, time_limit_s, token_used FROM sessions WHERE id = ?", (session_id,)).fetchone()
+        return dict(row)
     finally:
         conn.close()
 

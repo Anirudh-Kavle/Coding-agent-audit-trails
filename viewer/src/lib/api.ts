@@ -41,6 +41,9 @@ interface RawSession {
   project_key?: string;
   project?: string;
   last_event_ts?: number | null;
+  token_limit?: number | null;
+  token_used?: number | null;
+  time_limit_s?: number | null;
 }
 
 // Parse a JSON-string column without ever throwing. The hook truncates
@@ -118,6 +121,9 @@ export function normalizeSession(raw: RawSession): Session {
     project_key: raw.project_key,
     project: raw.project,
     last_event_ts: raw.last_event_ts ?? undefined,
+    token_limit: raw.token_limit ?? undefined,
+    token_used: raw.token_used ?? undefined,
+    time_limit_s: raw.time_limit_s ?? undefined,
     stats:
       raw.action_count != null
         ? {
@@ -130,6 +136,22 @@ export function normalizeSession(raw: RawSession): Session {
           }
         : undefined,
   };
+}
+
+export async function getUsage(): Promise<{ token_count: number }> {
+  const res = await fetch(`${API_BASE}/usage`);
+  if (!res.ok) throw new Error("Failed to fetch usage");
+  return res.json();
+}
+
+export async function updateBudget(sessionId: string, tokenLimit: number | null, timeLimit: number | null) {
+  const res = await fetch(`${API_BASE}/sessions/${sessionId}/budget`, {
+    method: "PATCH",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ token_limit: tokenLimit, time_limit_s: timeLimit }),
+  });
+  if (!res.ok) throw new Error("Could not update session limits");
+  return res.json();
 }
 
 // --- Fetchers ---

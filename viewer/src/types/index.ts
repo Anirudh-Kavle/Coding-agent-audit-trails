@@ -61,6 +61,10 @@ export interface Session {
   project_key?: string; // full path — the grouping key
   project?: string; // folder/repo basename — the display name
   last_event_ts?: number; // for summary staleness checks
+  // API-agent budget limits (rate limiter), editable from the TopBar.
+  token_limit?: number;
+  token_used?: number;
+  time_limit_s?: number;
 }
 
 export const RISK_TIERS: RiskTier[] = [
