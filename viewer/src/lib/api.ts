@@ -1,4 +1,4 @@
-import type { FlightEvent, Session } from "../types";
+import type { FlightEvent, Session, SummaryResponse } from "../types";
 import { RISK_TIERS } from "../types";
 
 const API_BASE = import.meta.env.VITE_API_URL || "/api";
@@ -32,6 +32,12 @@ interface RawSession {
   cwd: string;
   git_repo: string | null;
   source: string | null;
+  action_count?: number;
+  edit_count?: number;
+  bash_count?: number;
+  failed_count?: number;
+  sensitive_count?: number;
+  git_branch?: string | null;
 }
 
 // Parse a JSON-string column without ever throwing. The hook truncates
@@ -106,6 +112,17 @@ export function normalizeSession(raw: RawSession): Session {
     git_repo: raw.git_repo ?? undefined,
     source: SOURCE_MAP[raw.source ?? ""] ?? "interactive",
     live: raw.ended_at == null,
+    stats:
+      raw.action_count != null
+        ? {
+            action_count: raw.action_count,
+            edit_count: raw.edit_count ?? 0,
+            bash_count: raw.bash_count ?? 0,
+            failed_count: raw.failed_count ?? 0,
+            sensitive_count: raw.sensitive_count ?? 0,
+            git_branch: raw.git_branch ?? undefined,
+          }
+        : undefined,
   };
 }
 
@@ -141,6 +158,18 @@ export async function search(query: string): Promise<FlightEvent[]> {
   if (!res.ok) throw new Error("Failed to search");
   const raw: RawEvent[] = await res.json();
   return raw.map(normalizeEvent);
+}
+
+export async function getSummary(sessionId: string): Promise<SummaryResponse> {
+  const res = await fetch(`${API_BASE}/sessions/${sessionId}/summary`);
+  if (!res.ok) throw new Error("Failed to fetch summary");
+  return res.json();
+}
+
+export async function generateSummary(sessionId: string): Promise<SummaryResponse> {
+  const res = await fetch(`${API_BASE}/sessions/${sessionId}/summary`, { method: "POST" });
+  if (!res.ok) throw new Error("Failed to generate summary");
+  return res.json();
 }
 
 export async function getRecordingPaused(): Promise<boolean> {

@@ -21,6 +21,31 @@ export interface FlightEvent {
   created_at: number;
 }
 
+// Deterministic per-session counts computed by SQL on the backend.
+// Absent in mock mode, where the UI derives them from loaded events instead.
+export interface SessionStats {
+  action_count: number;
+  edit_count: number;
+  bash_count: number;
+  failed_count: number;
+  sensitive_count: number;
+  git_branch?: string;
+}
+
+// Local-LLM prose summary cached in sessions.summary. Citations in `text`
+// look like "[event 123]" and are validated server-side against real rows.
+export interface SessionSummary {
+  text: string;
+  model?: string | null;
+  generated_at?: number | null;
+}
+
+export interface SummaryResponse {
+  summary: SessionSummary | null;
+  available: boolean; // whether this install can generate (model present)
+  error?: string;
+}
+
 export interface Session {
   id: string;
   started_at: number;
@@ -30,6 +55,7 @@ export interface Session {
   source: "interactive" | "headless" | "resumed";
   label?: string; // human-friendly name for the sidebar
   live?: boolean; // currently recording
+  stats?: SessionStats;
 }
 
 export const RISK_TIERS: RiskTier[] = [

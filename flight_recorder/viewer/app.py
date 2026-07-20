@@ -37,11 +37,22 @@ def _event_to_dict(row: sqlite3.Row) -> dict:
 def list_sessions() -> list[dict]:
     conn = _conn()
     try:
+        # Deterministic per-session stat line: plain SQL counts, no inference.
+        # tool_kind can be NULL on rows from before normalization existed, so
+        # edit/bash counts also fall back to the raw tool name.
         rows = conn.execute(
             """
             SELECT s.id, s.started_at, s.ended_at, s.cwd, s.git_repo, s.source,
                    s.token_limit, s.time_limit_s, s.token_used,
-                   COUNT(e.id) as event_count, MAX(e.ts) as last_event_ts
+                   COUNT(e.id) as event_count, MAX(e.ts) as last_event_ts,
+                   COUNT(e.id) FILTER (WHERE e.tool IS NOT NULL) AS action_count,
+                   COUNT(e.id) FILTER (WHERE e.tool_kind IN ('edit', 'write')
+                       OR LOWER(e.tool) IN ('edit', 'write', 'notebookedit', 'apply_patch', 'write_file')) AS edit_count,
+                   COUNT(e.id) FILTER (WHERE e.tool_kind = 'bash'
+                       OR LOWER(e.tool) IN ('bash', 'run_command')) AS bash_count,
+                   COUNT(e.id) FILTER (WHERE e.exit_ok = 0) AS failed_count,
+                   COUNT(e.id) FILTER (WHERE e.risk = 'sensitive') AS sensitive_count,
+                   MAX(e.git_branch) AS git_branch
             FROM sessions s
             LEFT JOIN events e ON e.session_id = s.id
             GROUP BY s.id
@@ -104,6 +115,22 @@ def event_detail(event_id: int) -> dict | None:
 QUALIFIER_RE = re.compile(r"(\w+):(\S+)")
 
 
+def _day_to_ms(value: str) -> int | None:
+    """Parse a YYYY-MM-DD qualifier value to local-midnight epoch millis."""
+    try:
+        from datetime import datetime
+        return int(datetime.fromisoformat(value).timestamp() * 1000)
+    except ValueError:
+        return None
+
+
+def _fts_match(free_text: str) -> str:
+    """Quote each term so user punctuation can't be parsed as FTS5 operators;
+    the final term matches as a prefix for search-as-you-type."""
+    terms = [t.replace('"', '""') for t in free_text.split()]
+    return " ".join(f'"{t}"*' for t in terms)
+
+
 @app.get("/api/search")
 def search(q: str = "", limit: int = 200) -> list[dict]:
     qualifiers = dict(QUALIFIER_RE.findall(q))
@@ -116,7 +143,7 @@ def search(q: str = "", limit: int = 200) -> list[dict]:
 
         if free_text:
             fts_ids = conn.execute(
-                "SELECT rowid FROM events_fts WHERE events_fts MATCH ?", (free_text + "*",)
+                "SELECT rowid FROM events_fts WHERE events_fts MATCH ?", (_fts_match(free_text),)
             ).fetchall()
             ids = [r[0] for r in fts_ids]
             if not ids:
@@ -139,6 +166,19 @@ def search(q: str = "", limit: int = 200) -> list[dict]:
         if "file" in qualifiers:
             conditions.append("arguments_json LIKE ?")
             params.append(f"%{qualifiers['file']}%")
+        if "provider" in qualifiers:
+            conditions.append("LOWER(provider) = LOWER(?)")
+            params.append(qualifiers["provider"])
+        if "exit" in qualifiers:
+            # exit:fail finds every action that errored; exit:ok the inverse.
+            conditions.append("exit_ok = ?")
+            params.append(1 if qualifiers["exit"].lower() in {"ok", "pass", "success"} else 0)
+        if "after" in qualifiers and (after_ms := _day_to_ms(qualifiers["after"])) is not None:
+            conditions.append("ts >= ?")
+            params.append(after_ms)
+        if "before" in qualifiers and (before_ms := _day_to_ms(qualifiers["before"])) is not None:
+            conditions.append("ts < ?")
+            params.append(before_ms)
 
         sql = "SELECT * FROM events"
         if conditions:
@@ -150,6 +190,36 @@ def search(q: str = "", limit: int = 200) -> list[dict]:
         return [_event_to_dict(r) for r in rows]
     finally:
         conn.close()
+
+
+@app.get("/api/sessions/{session_id}/summary")
+def get_summary(session_id: str) -> dict:
+    """Cached local-LLM summary plus whether generation is possible here."""
+    from .. import summarizer
+
+    conn = _conn()
+    try:
+        cached = summarizer.load_cached_summary(conn, session_id)
+    finally:
+        conn.close()
+    return {"summary": cached, "available": summarizer.enabled()}
+
+
+@app.post("/api/sessions/{session_id}/summary")
+def generate_summary(session_id: str) -> dict:
+    """Generate (or regenerate) a summary with the local model. Slow on CPU —
+    tens of seconds — which is why it only ever runs on explicit request.
+    Sync endpoint on purpose: FastAPI runs it in a worker thread."""
+    from .. import summarizer
+
+    if not summarizer.enabled():
+        return {"summary": None, "available": False,
+                "error": f"no local model — put a .gguf in {summarizer.MODELS_DIR}"}
+    try:
+        record = summarizer.summarize_session(session_id)
+    except Exception as exc:
+        return {"summary": None, "available": True, "error": str(exc)}
+    return {"summary": record, "available": True}
 
 
 @app.get("/api/recording")

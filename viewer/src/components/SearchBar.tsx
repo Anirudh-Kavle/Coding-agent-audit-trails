@@ -26,7 +26,7 @@ export const SearchBar = forwardRef<HTMLInputElement, Props>(
             ref={ref}
             value={value}
             onChange={(e) => onChange(e.target.value)}
-            placeholder="search   tool:bash risk:sensitive file:deploy"
+            placeholder="search all sessions   tool:bash risk:sensitive exit:fail after:2026-07-01"
             className="w-full bg-transparent font-mono text-sm text-ink placeholder:text-ink-faint focus:outline-none"
             aria-label="Search events"
           />

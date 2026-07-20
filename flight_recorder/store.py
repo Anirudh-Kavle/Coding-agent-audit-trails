@@ -71,13 +71,26 @@ def init_db() -> None:
     try:
         # Existing hackathon databases predate the Codex correlation fields.
         # Run the base schema, then migrate in place without deleting events.
+        had_update_trigger = conn.execute(
+            "SELECT 1 FROM sqlite_master WHERE type='trigger' AND name='events_au'"
+        ).fetchone() is not None
         conn.executescript(SCHEMA_PATH.read_text())
+        if not had_update_trigger:
+            # Rows updated before the AFTER UPDATE trigger existed (paired
+            # results, healed reasoning) are stale in the FTS index; repopulate
+            # once from the content table. (FTS5's 'rebuild' command can't be
+            # used here: the index column names don't match the events table's.)
+            conn.execute("INSERT INTO events_fts(events_fts) VALUES('delete-all')")
+            conn.execute(
+                "INSERT INTO events_fts(rowid, arguments_text, reasoning_text) "
+                "SELECT id, arguments_json, reasoning_text FROM events"
+            )
         columns = {row[1] for row in conn.execute("PRAGMA table_info(events)")}
         for name in ("tool_kind", "tool_use_id", "turn_id", "provider", "model", "notification_sent", "token_count", "usage_json", "action_id", "completed_at"):
             if name not in columns:
                 conn.execute(f"ALTER TABLE events ADD COLUMN {name} TEXT")
         session_columns = {row[1] for row in conn.execute("PRAGMA table_info(sessions)")}
-        for name, definition in (("token_limit", "INTEGER"), ("time_limit_s", "INTEGER"), ("token_used", "INTEGER NOT NULL DEFAULT 0")):
+        for name, definition in (("token_limit", "INTEGER"), ("time_limit_s", "INTEGER"), ("token_used", "INTEGER NOT NULL DEFAULT 0"), ("summary", "TEXT")):
             if name not in session_columns:
                 conn.execute(f"ALTER TABLE sessions ADD COLUMN {name} {definition}")
         conn.execute("CREATE INDEX IF NOT EXISTS idx_events_tool_kind ON events(tool_kind)")

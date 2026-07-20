@@ -1,4 +1,4 @@
-import type { FlightEvent, Session } from "../types";
+import type { FlightEvent, Session, SummaryResponse } from "../types";
 import { mockEvents, mockSessions, generateMockEvent } from "./mockData";
 import { filterEvents } from "./search";
 import * as api from "./api";
@@ -15,6 +15,8 @@ export interface DataSource {
   getEvents(sessionId?: string): Promise<FlightEvent[]>;
   getEvent(id: number): Promise<FlightEvent | undefined>;
   search(query: string): Promise<FlightEvent[]>;
+  getSummary(sessionId: string): Promise<SummaryResponse>;
+  generateSummary(sessionId: string): Promise<SummaryResponse>;
   subscribe(onEvent: (e: FlightEvent) => void): () => void;
   getRecordingPaused(): Promise<boolean>;
   setRecordingPaused(paused: boolean): Promise<boolean>;
@@ -39,6 +41,13 @@ const mockSource: DataSource = {
   async search(query) {
     return filterEvents(mockEvents, query);
   },
+  // No local model in mock mode — the summary panel simply hides itself.
+  async getSummary() {
+    return { summary: null, available: false };
+  },
+  async generateSummary() {
+    return { summary: null, available: false };
+  },
   subscribe(onEvent) {
     const timer = setInterval(() => {
       if (mockPaused) return;
@@ -62,6 +71,8 @@ const liveSource: DataSource = {
   getEvents: (sessionId) => api.getEvents(sessionId),
   getEvent: (id) => api.getEvent(id),
   search: (query) => api.search(query),
+  getSummary: (sessionId) => api.getSummary(sessionId),
+  generateSummary: (sessionId) => api.generateSummary(sessionId),
   subscribe: (onEvent) => api.streamEvents(onEvent),
   getRecordingPaused: api.getRecordingPaused,
   setRecordingPaused: api.setRecordingPaused,

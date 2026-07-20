@@ -7,9 +7,13 @@ export interface ParsedQuery {
   risk?: string;
   file?: string;
   session?: string;
+  exit?: string;
+  provider?: string;
+  after?: string;
+  before?: string;
 }
 
-const QUALIFIERS = ["tool", "risk", "file", "session"] as const;
+const QUALIFIERS = ["tool", "risk", "file", "session", "exit", "provider", "after", "before"] as const;
 
 // Hand-rolled qualifier parser (spec 3.2) — tool: risk: file: session: + free text. No lib.
 export function parseQuery(q: string): ParsedQuery {
@@ -42,6 +46,13 @@ export function filterEvents(events: FlightEvent[], q: string): FlightEvent[] {
       const files = (e.files_touched ?? []).join(" ").toLowerCase();
       if (!files.includes(p.file)) return false;
     }
+    if (p.exit) {
+      const wantOk = ["ok", "pass", "success"].includes(p.exit);
+      if (e.exit_ok !== wantOk) return false;
+    }
+    if (p.after && e.ts < Date.parse(p.after)) return false;
+    if (p.before && e.ts >= Date.parse(p.before)) return false;
+    // provider: isn't on the client event shape; the backend handles it.
     if (p.text.length) {
       const hay = (
         eventSummary(e) +

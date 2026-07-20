@@ -24,14 +24,15 @@ def _seed(conn):
         "INSERT INTO sessions (id, started_at, ended_at, cwd, source) VALUES ('sess_b', 2000, 3000, '/tmp/b', 'resume')"
     )
     events = [
-        ("sess_a", 1100, "post", "Read", "exec"),
-        ("sess_a", 1200, "post", "Bash", "sensitive"),
-        ("sess_b", 2100, "post", "Edit", "write"),
+        ("sess_a", 1100, "post", "Read", "read", 1, "exec"),
+        ("sess_a", 1200, "post", "Bash", "bash", 0, "sensitive"),
+        ("sess_b", 2100, "post", "Edit", "edit", 1, "write"),
     ]
-    for session_id, ts, phase, tool, risk in events:
+    for session_id, ts, phase, tool, tool_kind, exit_ok, risk in events:
         conn.execute(
-            "INSERT INTO events (session_id, ts, phase, tool, risk, risk_reasons) VALUES (?, ?, ?, ?, ?, '[]')",
-            (session_id, ts, phase, tool, risk),
+            "INSERT INTO events (session_id, ts, phase, tool, tool_kind, exit_ok, risk, risk_reasons)"
+            " VALUES (?, ?, ?, ?, ?, ?, ?, '[]')",
+            (session_id, ts, phase, tool, tool_kind, exit_ok, risk),
         )
     conn.commit()
 
@@ -75,6 +76,20 @@ def test_missing_event_returns_null(client):
     res = client.get("/api/events/99999")
     assert res.status_code == 200
     assert res.json() is None
+
+
+def test_sessions_include_deterministic_stat_counts(client):
+    sessions = {s["id"]: s for s in client.get("/api/sessions").json()}
+    a = sessions["sess_a"]
+    assert a["action_count"] == 2
+    assert a["bash_count"] == 1
+    assert a["failed_count"] == 1
+    assert a["sensitive_count"] == 1
+    assert a["edit_count"] == 0
+    b = sessions["sess_b"]
+    assert b["action_count"] == 1
+    assert b["edit_count"] == 1
+    assert b["failed_count"] == 0
 
 
 def test_root_serves_something(client):

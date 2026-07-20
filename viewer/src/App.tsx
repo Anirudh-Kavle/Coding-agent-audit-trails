@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from "react";
-import { type RiskTier, RISK_TIERS, type Session } from "./types";
+import { type FlightEvent, type RiskTier, RISK_TIERS, type Session } from "./types";
 import { dataSource } from "./lib/dataSource";
 import { useEventStream } from "./hooks/useEventStream";
 import { useKeyboardNav } from "./hooks/useKeyboardNav";
@@ -10,6 +10,8 @@ import { SessionSidebar } from "./components/SessionSidebar";
 import { Timeline } from "./components/Timeline";
 import { DetailDrawer } from "./components/DetailDrawer";
 import { EmptyState } from "./components/EmptyState";
+import { SessionStatsBar } from "./components/SessionStatsBar";
+import { SessionSummaryPanel } from "./components/SessionSummary";
 
 export default function App() {
   const { events, loading, lastArrivalId } = useEventStream();
@@ -28,18 +30,66 @@ export default function App() {
   const live = sessions.some((s) => s.live);
   const searching = search.trim().length > 0;
 
+  // Full-database search: the loaded timeline holds only the newest events,
+  // so an active query also asks the backend (FTS over every session ever
+  // recorded). Debounced; the client-side filter below gives instant results
+  // over loaded events until the full set arrives.
+  const [remoteResults, setRemoteResults] = useState<FlightEvent[] | null>(null);
+  useEffect(() => {
+    if (!searching) {
+      setRemoteResults(null);
+      return;
+    }
+    let stale = false;
+    const timer = setTimeout(() => {
+      dataSource
+        .search(search)
+        .then((r) => {
+          if (!stale) setRemoteResults(r);
+        })
+        .catch(() => {
+          if (!stale) setRemoteResults(null); // backend unreachable → keep client filter
+        });
+    }, 250);
+    return () => {
+      stale = true;
+      clearTimeout(timer);
+    };
+  }, [search, searching]);
+
   // Filter pipeline: session scope → risk filter → search. Newest-first for the timeline.
   const visible = useMemo(() => {
-    let list = events;
+    let list = searching && remoteResults ? remoteResults : events;
     if (selectedSession) list = list.filter((e) => e.session_id === selectedSession);
     list = list.filter((e) => riskFilter.has(e.risk));
-    if (searching) list = filterEvents(list, search);
+    if (searching && !remoteResults) list = filterEvents(list, search);
     return [...list].sort(byNewest);
-  }, [events, selectedSession, riskFilter, search, searching]);
+  }, [events, remoteResults, selectedSession, riskFilter, search, searching]);
 
+  // Search hits and summary citations can reference events outside the loaded
+  // stream — check the remote result set and the citation-fetched event too.
+  const [fetchedEvent, setFetchedEvent] = useState<FlightEvent | null>(null);
   const selectedEvent = drawerOpen
-    ? events.find((e) => e.id === selectedId) ?? null
+    ? events.find((e) => e.id === selectedId) ??
+      remoteResults?.find((e) => e.id === selectedId) ??
+      (fetchedEvent?.id === selectedId ? fetchedEvent : null)
     : null;
+
+  // Summary citation click: the cited event may be anywhere in history.
+  const openCitedEvent = (id: number) => {
+    const local = events.find((e) => e.id === id) ?? remoteResults?.find((e) => e.id === id);
+    if (local) {
+      setSelectedId(id);
+      setDrawerOpen(true);
+      return;
+    }
+    dataSource.getEvent(id).then((e) => {
+      if (!e) return;
+      setFetchedEvent(e);
+      setSelectedId(id);
+      setDrawerOpen(true);
+    });
+  };
 
   const toggleRisk = (r: RiskTier) => {
     setRiskFilter((prev) => {
@@ -88,6 +138,14 @@ export default function App() {
         />
 
         <main className="relative flex min-h-0 min-w-0 flex-1 flex-col">
+          <SessionStatsBar
+            selectedSession={sessions.find((s) => s.id === selectedSession) ?? null}
+            sessions={sessions}
+            events={events}
+          />
+          {selectedSession && (
+            <SessionSummaryPanel sessionId={selectedSession} onOpenEvent={openCitedEvent} />
+          )}
           <Timeline
             events={visible}
             loading={loading}
