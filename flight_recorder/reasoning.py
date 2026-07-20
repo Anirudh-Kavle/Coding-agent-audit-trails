@@ -13,6 +13,7 @@ from pathlib import Path
 
 MAX_TAIL_BYTES = 64 * 1024
 MAX_REASONING_LEN = 8 * 1024
+MAX_TITLE_HEAD_BYTES = 256 * 1024
 
 
 def _tail_lines(path: Path, max_bytes: int) -> list[str]:
@@ -126,6 +127,37 @@ def extract_reasoning(transcript_path: str | None, tool_use_id: str | None = Non
         reasoning = "[...truncated...]\n" + reasoning[-MAX_REASONING_LEN:]
 
     return reasoning, False
+
+
+def extract_session_title(transcript_path: str | None) -> str | None:
+    """Claude Code writes its own generated sidebar title into the transcript
+    as an "ai-title" entry, once, early on, then re-emits the same value a
+    few more times as the session goes on. Reading it means the viewer's
+    sidebar can show the same human name Claude Code itself uses instead of
+    a raw session id — bounded to the head of the file since the title never
+    shows up any later than the first few dozen lines, so there's no reason
+    to scan a multi-MB transcript in full to find it."""
+    if not transcript_path:
+        return None
+
+    path = Path(transcript_path)
+    if not path.exists():
+        return None
+
+    try:
+        with path.open("r", encoding="utf-8", errors="ignore") as f:
+            head = f.read(MAX_TITLE_HEAD_BYTES)
+    except Exception:
+        return None
+
+    for entry in _parse_entries(head.split("\n")):
+        if entry.get("type") != "ai-title":
+            continue
+        title = entry.get("aiTitle")
+        if isinstance(title, str) and title.strip():
+            return title.strip()
+
+    return None
 
 
 def snapshot_transcript(transcript_path: str | None, session_id: str, snapshots_dir: Path) -> Path | None:

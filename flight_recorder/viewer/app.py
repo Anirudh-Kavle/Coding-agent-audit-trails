@@ -38,7 +38,7 @@ def list_sessions() -> list[dict]:
     try:
         rows = conn.execute(
             """
-            SELECT s.id, s.started_at, s.ended_at, s.cwd, s.git_repo, s.source,
+            SELECT s.id, s.started_at, s.ended_at, s.cwd, s.git_repo, s.source, s.title,
                    COUNT(e.id) as event_count, MAX(e.ts) as last_event_ts
             FROM sessions s
             LEFT JOIN events e ON e.session_id = s.id

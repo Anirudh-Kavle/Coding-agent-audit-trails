@@ -4,7 +4,8 @@ CREATE TABLE IF NOT EXISTS sessions (
     ended_at INTEGER,
     cwd TEXT,
     git_repo TEXT,
-    source TEXT
+    source TEXT,
+    title TEXT
 );
 
 CREATE TABLE IF NOT EXISTS events (

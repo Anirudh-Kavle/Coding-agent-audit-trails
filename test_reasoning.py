@@ -119,3 +119,43 @@ def test_missing_transcript_path_is_an_honest_gap():
 
 def test_nonexistent_file_is_an_honest_gap(tmp_path):
     assert reasoning.extract_reasoning(str(tmp_path / "does_not_exist.jsonl")) == (None, True)
+
+
+def _ai_title(text):
+    return {"type": "ai-title", "sessionId": "sess1", "aiTitle": text}
+
+
+def test_extract_session_title_finds_it_near_the_top(tmp_path):
+    path = _write(tmp_path, [
+        {"type": "queue-operation", "operation": "x"},
+        _user_prompt("brainstorm art contest ideas"),
+        _ai_title("Brainstorm art contest project ideas"),
+        _assistant_text("Here are five ideas..."),
+    ])
+    assert reasoning.extract_session_title(path) == "Brainstorm art contest project ideas"
+
+
+def test_extract_session_title_takes_the_first_occurrence(tmp_path):
+    # Claude Code re-emits the same ai-title entry multiple times through a
+    # session (seen in practice) — the first one found is enough, no need to
+    # keep scanning for a value that never changes once set.
+    path = _write(tmp_path, [
+        _ai_title("Fix auth bug"),
+        _ai_title("Fix auth bug"),
+        _ai_title("Fix auth bug"),
+    ])
+    assert reasoning.extract_session_title(path) == "Fix auth bug"
+
+
+def test_extract_session_title_missing_when_not_yet_generated(tmp_path):
+    # Early in a session, before Claude Code has generated a title yet.
+    path = _write(tmp_path, [_user_prompt("hello")])
+    assert reasoning.extract_session_title(path) is None
+
+
+def test_extract_session_title_missing_transcript_path_returns_none():
+    assert reasoning.extract_session_title(None) is None
+
+
+def test_extract_session_title_nonexistent_file_returns_none(tmp_path):
+    assert reasoning.extract_session_title(str(tmp_path / "does_not_exist.jsonl")) is None

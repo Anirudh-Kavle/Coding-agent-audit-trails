@@ -68,6 +68,11 @@ def _handle(payload: dict) -> None:
         if hook_event_name == "SessionEnd":
             store.mark_session_ended(conn, session_id, ts)
 
+        if transcript_path and store.session_needs_title(conn, session_id):
+            title = reasoning.extract_session_title(transcript_path)
+            if title:
+                store.set_session_title(conn, session_id, title)
+
         if hook_event_name == "PreCompact":
             reasoning.snapshot_transcript(transcript_path, session_id, store.SNAPSHOTS_DIR)
 

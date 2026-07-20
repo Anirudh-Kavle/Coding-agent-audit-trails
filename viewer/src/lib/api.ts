@@ -32,6 +32,7 @@ interface RawSession {
   cwd: string;
   git_repo: string | null;
   source: string | null;
+  title: string | null;
 }
 
 // Parse a JSON-string column without ever throwing. The hook truncates
@@ -105,6 +106,7 @@ export function normalizeSession(raw: RawSession): Session {
     cwd: raw.cwd,
     git_repo: raw.git_repo ?? undefined,
     source: SOURCE_MAP[raw.source ?? ""] ?? "interactive",
+    label: raw.title ?? undefined,
     live: raw.ended_at == null,
   };
 }

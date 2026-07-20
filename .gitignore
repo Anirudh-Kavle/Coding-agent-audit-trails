@@ -37,3 +37,7 @@ events/
 
 # OS
 .DS_Store
+
+# Local scratch / experiments
+app.py
+scratch/

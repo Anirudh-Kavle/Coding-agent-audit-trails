@@ -86,6 +86,7 @@ const rawSession = {
   cwd: "/Users/dev/project",
   git_repo: "project",
   source: "startup",
+  title: null,
 };
 
 describe("normalizeSession", () => {
@@ -107,5 +108,12 @@ describe("normalizeSession", () => {
     const s = normalizeSession({ ...rawSession, git_repo: null });
     expect(s.git_repo).toBeUndefined();
     expect(s.ended_at).toBeUndefined();
+  });
+
+  it("maps title onto label, the Claude Code sidebar name", () => {
+    expect(normalizeSession({ ...rawSession, title: "Brainstorm art contest project ideas" }).label).toBe(
+      "Brainstorm art contest project ideas",
+    );
+    expect(normalizeSession({ ...rawSession, title: null }).label).toBeUndefined();
   });
 });

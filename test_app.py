@@ -23,6 +23,9 @@ def _seed(conn):
     conn.execute(
         "INSERT INTO sessions (id, started_at, ended_at, cwd, source) VALUES ('sess_b', 2000, 3000, '/tmp/b', 'resume')"
     )
+    conn.execute(
+        "INSERT INTO sessions (id, started_at, cwd, source, title) VALUES ('sess_c', 3000, '/tmp/c', 'startup', 'Brainstorm art contest project ideas')"
+    )
     events = [
         ("sess_a", 1100, "post", "Read", "exec"),
         ("sess_a", 1200, "post", "Bash", "sensitive"),
@@ -75,6 +78,12 @@ def test_missing_event_returns_null(client):
     res = client.get("/api/events/99999")
     assert res.status_code == 200
     assert res.json() is None
+
+
+def test_sessions_include_title_when_set(client):
+    sessions = {s["id"]: s["title"] for s in client.get("/api/sessions").json()}
+    assert sessions["sess_c"] == "Brainstorm art contest project ideas"
+    assert sessions["sess_a"] is None
 
 
 def test_root_serves_something(client):

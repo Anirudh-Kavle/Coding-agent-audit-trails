@@ -271,6 +271,98 @@ def test_opportunistic_heal_ignores_gaps_outside_the_recency_window(isolated_sto
     assert row["capture_gap"] == 1  # left alone — too old to retry
 
 
+def test_session_title_captured_from_transcript_ai_title(isolated_store, tmp_path):
+    transcript_path = tmp_path / "session.jsonl"
+    _write_transcript(transcript_path, [
+        _user_prompt("brainstorm art contest ideas"),
+        {"type": "ai-title", "sessionId": "sess1", "aiTitle": "Brainstorm art contest project ideas"},
+    ])
+
+    payload = {
+        "hook_event_name": "UserPromptSubmit",
+        "session_id": "sess1",
+        "cwd": str(tmp_path),
+        "transcript_path": str(transcript_path),
+    }
+    hook._handle(payload)
+
+    conn = store.get_conn()
+    row = conn.execute("SELECT title FROM sessions WHERE id='sess1'").fetchone()
+    conn.close()
+    assert row["title"] == "Brainstorm art contest project ideas"
+
+
+def test_session_title_stays_once_set_even_if_transcript_title_later_differs(isolated_store, tmp_path):
+    # The title is generated once by Claude Code and doesn't change — once
+    # captured, later hook calls in the same session must not overwrite it
+    # (also means they can skip re-scanning the transcript for it at all).
+    transcript_path = tmp_path / "session.jsonl"
+    _write_transcript(transcript_path, [
+        {"type": "ai-title", "sessionId": "sess1", "aiTitle": "Original title"},
+    ])
+    hook._handle({
+        "hook_event_name": "UserPromptSubmit",
+        "session_id": "sess1",
+        "cwd": str(tmp_path),
+        "transcript_path": str(transcript_path),
+    })
+
+    _write_transcript(transcript_path, [
+        {"type": "ai-title", "sessionId": "sess1", "aiTitle": "A different title"},
+    ])
+    hook._handle({
+        "hook_event_name": "UserPromptSubmit",
+        "session_id": "sess1",
+        "cwd": str(tmp_path),
+        "transcript_path": str(transcript_path),
+    })
+
+    conn = store.get_conn()
+    row = conn.execute("SELECT title FROM sessions WHERE id='sess1'").fetchone()
+    conn.close()
+    assert row["title"] == "Original title"
+
+
+def test_session_title_absent_when_transcript_has_none_yet(isolated_store, tmp_path):
+    transcript_path = tmp_path / "session.jsonl"
+    _write_transcript(transcript_path, [_user_prompt("hello")])
+    hook._handle({
+        "hook_event_name": "UserPromptSubmit",
+        "session_id": "sess1",
+        "cwd": str(tmp_path),
+        "transcript_path": str(transcript_path),
+    })
+
+    conn = store.get_conn()
+    row = conn.execute("SELECT title FROM sessions WHERE id='sess1'").fetchone()
+    conn.close()
+    assert row["title"] is None
+
+
+def test_migration_adds_title_to_a_pre_existing_sessions_table(tmp_path, monkeypatch):
+    monkeypatch.setattr(store, "STORE_DIR", tmp_path)
+    monkeypatch.setattr(store, "DB_PATH", tmp_path / "recorder.db")
+    monkeypatch.setattr(store, "EVENTS_DIR", tmp_path / "events")
+    monkeypatch.setattr(store, "SNAPSHOTS_DIR", tmp_path / "snapshots")
+
+    old_schema = """
+        CREATE TABLE sessions (
+            id TEXT PRIMARY KEY, started_at INTEGER, ended_at INTEGER,
+            cwd TEXT, git_repo TEXT, source TEXT
+        );
+    """
+    store.ensure_dirs()
+    raw = sqlite3.connect(store.DB_PATH)
+    raw.executescript(old_schema)
+    raw.commit()
+    raw.close()
+
+    conn = store.get_conn()  # must not raise
+    cols = {row[1] for row in conn.execute("PRAGMA table_info(sessions)")}
+    conn.close()
+    assert "title" in cols
+
+
 def test_post_tool_use_leaves_gap_alone_if_transcript_still_hasnt_caught_up(isolated_store, tmp_path):
     transcript_path = tmp_path / "session.jsonl"
     _write_transcript(transcript_path, [_user_prompt("run echo hi")])
