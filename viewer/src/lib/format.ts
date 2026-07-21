@@ -49,9 +49,65 @@ export function reasoningFirstLine(e: FlightEvent): string | null {
   return line.length > 120 ? line.slice(0, 117) + "…" : line;
 }
 
+// Minimal JSON syntax highlighter — no dependency, since the only "language"
+// the drawer ever needs to color is JSON. One token per string/number/
+// boolean/null; everything else (braces, commas, whitespace) stays plain.
+export type JsonTokenType = "key" | "string" | "number" | "boolean" | "null" | "punctuation";
+
+export interface JsonToken {
+  text: string;
+  type: JsonTokenType;
+}
+
+const JSON_TOKEN_RE = /"(?:\\u[a-fA-F0-9]{4}|\\[^u]|[^\\"])*"|\btrue\b|\bfalse\b|\bnull\b|-?\d+(?:\.\d+)?(?:[eE][+-]?\d+)?/g;
+
+export function tokenizeJson(text: string): JsonToken[] {
+  const tokens: JsonToken[] = [];
+  let lastIndex = 0;
+
+  for (const match of text.matchAll(JSON_TOKEN_RE)) {
+    const raw = match[0];
+    const index = match.index ?? 0;
+    if (index > lastIndex) {
+      tokens.push({ text: text.slice(lastIndex, index), type: "punctuation" });
+    }
+
+    let type: JsonTokenType;
+    if (raw.startsWith('"')) {
+      // A quoted string immediately followed by a colon is an object key —
+      // peek forward rather than consuming the colon into the token, so the
+      // colon itself stays plain punctuation.
+      type = /^\s*:/.test(text.slice(index + raw.length)) ? "key" : "string";
+    } else if (raw === "true" || raw === "false") {
+      type = "boolean";
+    } else if (raw === "null") {
+      type = "null";
+    } else {
+      type = "number";
+    }
+    tokens.push({ text: raw, type });
+    lastIndex = index + raw.length;
+  }
+
+  if (lastIndex < text.length) {
+    tokens.push({ text: text.slice(lastIndex), type: "punctuation" });
+  }
+  return tokens;
+}
+
+export function highlightJson(value: unknown): JsonToken[] {
+  return tokenizeJson(JSON.stringify(value, null, 2));
+}
+
 // Short git SHA (mono), defensive against already-short or missing values.
 export function shortSha(head?: string): string {
   return head ? head.slice(0, 7) : "—";
+}
+
+// Suffix for the HEAD row — null means git status couldn't be read, not "clean".
+export function gitDirtySuffix(dirty: boolean | null): string {
+  if (dirty === null) return " (dirty: unknown)";
+  return dirty ? " (dirty)" : "";
 }
 
 // Clean-markdown export of one event — feeds the S1 incident-report story.
@@ -66,11 +122,11 @@ export function eventToMarkdown(e: FlightEvent): string {
     "",
     "**Why**",
     e.capture_gap
-      ? "_reasoning unavailable (transcript compacted before capture)_"
+      ? "_reasoning not captured for this action_"
       : e.reasoning_text || "_none captured_",
     "",
     "**Context**",
-    `- cwd branch: \`${e.git_branch ?? "—"}\` @ \`${shortSha(e.git_head)}\`${e.git_dirty ? " (dirty)" : ""}`,
+    `- cwd branch: \`${e.git_branch ?? "—"}\` @ \`${shortSha(e.git_head)}\`${gitDirtySuffix(e.git_dirty)}`,
     `- session: \`${e.session_id}\``,
   ];
   return lines.join("\n");

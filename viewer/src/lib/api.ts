@@ -74,16 +74,14 @@ export function normalizeEvent(raw: RawEvent): FlightEvent {
     tool: raw.tool,
     arguments_json: looseJson(raw.arguments_json) ?? {},
     result_json: looseJson(raw.result_json),
-    // ponytail: exit_ok null (in-flight pre event) maps to true so pending
-    // calls don't render as failed; upgrade to a tristate if pending needs UI.
-    exit_ok: raw.exit_ok !== 0,
+    exit_ok: raw.exit_ok === null ? null : raw.exit_ok === 1,
     risk: (RISK_TIERS as string[]).includes(raw.risk) ? (raw.risk as FlightEvent["risk"]) : "info",
     risk_reasons: reasons || undefined,
     reasoning_text: raw.reasoning_text ?? undefined,
     capture_gap: raw.capture_gap === 1,
     git_branch: raw.git_branch ?? undefined,
     git_head: raw.git_head ?? undefined,
-    git_dirty: raw.git_dirty === 1,
+    git_dirty: raw.git_dirty === null ? null : raw.git_dirty === 1,
     files_touched: files,
     created_at: raw.ts,
   };

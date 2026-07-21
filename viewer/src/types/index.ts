@@ -9,14 +9,14 @@ export interface FlightEvent {
   tool: string;
   arguments_json: Record<string, unknown>;
   result_json?: Record<string, unknown>;
-  exit_ok: boolean;
+  exit_ok: boolean | null; // null = no PostToolUse observed yet — unresolved, not "ok"
   risk: RiskTier;
   risk_reasons?: string;
   reasoning_text?: string;
   capture_gap: boolean;
   git_branch?: string;
   git_head?: string;
-  git_dirty: boolean;
+  git_dirty: boolean | null; // null = git status unavailable (no repo, git missing, timed out)
   files_touched?: string[];
   created_at: number;
 }

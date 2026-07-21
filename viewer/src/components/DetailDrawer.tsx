@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import type { FlightEvent } from "../types";
-import { formatTime, shortSha, eventToMarkdown } from "../lib/format";
+import { formatTime, shortSha, gitDirtySuffix, eventToMarkdown, highlightJson, type JsonTokenType } from "../lib/format";
 import { RiskBadge } from "./RiskBadge";
 
 type Tab = "what" | "why" | "context" | "result";
@@ -127,8 +127,8 @@ function WhyTab({ event }: { event: FlightEvent }) {
       <div className="rounded-md border border-risk-exec/40 bg-risk-exec/5 p-4">
         <p className="text-sm font-medium text-risk-exec">reasoning unavailable</p>
         <p className="mt-1 text-sm text-ink-muted">
-          The transcript was compacted or deleted before this action's reasoning could be
-          captured. We never fabricate a "why" — this gap is recorded honestly.
+          No reasoning text was captured for this action. We never fabricate a "why" —
+          this gap is recorded honestly.
         </p>
       </div>
     );
@@ -137,7 +137,7 @@ function WhyTab({ event }: { event: FlightEvent }) {
     <div className="space-y-3">
       <span className="inline-flex items-center gap-1.5 rounded-full border border-risk-write/40 bg-risk-write/10 px-2.5 py-0.5 text-xs text-risk-write">
         <span className="h-1.5 w-1.5 rounded-full bg-risk-write" aria-hidden />
-        captured live before compaction
+        reasoning captured
       </span>
       <p className="max-w-[70ch] text-[15px] leading-[1.6] text-ink">{event.reasoning_text}</p>
     </div>
@@ -148,7 +148,7 @@ function ContextTab({ event }: { event: FlightEvent }) {
   return (
     <dl className="grid grid-cols-[8rem_minmax(0,1fr)] gap-x-4 gap-y-2.5 text-sm">
       <Row k="git branch" v={event.git_branch ?? "—"} mono />
-      <Row k="HEAD" v={`${shortSha(event.git_head)}${event.git_dirty ? "  (dirty)" : ""}`} mono />
+      <Row k="HEAD" v={`${shortSha(event.git_head)}${gitDirtySuffix(event.git_dirty)}`} mono />
       <Row k="session" v={event.session_id} mono />
       <Row k="phase" v={event.phase} mono />
       {event.risk_reasons && <Row k="risk reasons" v={event.risk_reasons} />}
@@ -161,8 +161,16 @@ function ResultTab({ event }: { event: FlightEvent }) {
     <div className="space-y-3">
       <div className="flex items-center gap-2 text-sm">
         <Label>exit</Label>
-        <span className={event.exit_ok ? "text-risk-write" : "text-risk-sensitive"}>
-          {event.exit_ok ? "ok" : "failed"}
+        <span
+          className={
+            event.exit_ok === null
+              ? "text-ink-muted"
+              : event.exit_ok
+                ? "text-risk-write"
+                : "text-risk-sensitive"
+          }
+        >
+          {event.exit_ok === null ? "pending — no result observed yet" : event.exit_ok ? "ok" : "failed"}
         </span>
       </div>
       <Json label="result" value={event.result_json ?? { note: "no result recorded" }} />
@@ -170,12 +178,25 @@ function ResultTab({ event }: { event: FlightEvent }) {
   );
 }
 
+const TOKEN_CLASS: Record<JsonTokenType, string> = {
+  key: "text-syntax-key",
+  string: "text-syntax-string",
+  number: "text-syntax-value",
+  boolean: "text-syntax-value",
+  null: "text-syntax-value",
+  punctuation: "text-ink-muted",
+};
+
 function Json({ label, value }: { label: string; value: unknown }) {
   return (
     <div>
       <Label>{label}</Label>
       <pre className="mt-1.5 overflow-x-auto rounded-md border border-border-soft bg-bg p-3 font-mono text-xs leading-relaxed text-ink">
-        {JSON.stringify(value, null, 2)}
+        {highlightJson(value).map((token, i) => (
+          <span key={i} className={TOKEN_CLASS[token.type]}>
+            {token.text}
+          </span>
+        ))}
       </pre>
     </div>
   );

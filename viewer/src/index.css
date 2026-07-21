@@ -28,6 +28,13 @@
 
   /* The one theatrical, non-semantic accent. */
   --color-rec: #ff5a3c;
+
+  /* JSON syntax highlighting — deliberately its own hues, distinct from the
+     risk palette above, so a colored token in an arguments/result block is
+     never mistaken for a risk signal. */
+  --color-syntax-key: #5fb8b0;
+  --color-syntax-string: #89c97a;
+  --color-syntax-value: #d6b656;
 }
 
 html,
