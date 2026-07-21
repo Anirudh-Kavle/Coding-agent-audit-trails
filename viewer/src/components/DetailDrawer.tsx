@@ -43,7 +43,7 @@ export function DetailDrawer({ event, onClose }: Props) {
       <section
         role="dialog"
         aria-label="Event detail"
-        className="fr-slide-in absolute inset-x-0 bottom-0 z-30 flex h-[62%] flex-col border-t border-border bg-surface shadow-2xl"
+        className="fr-slide-in-right absolute inset-y-0 right-0 z-30 flex w-[min(42rem,92vw)] flex-col border-l border-border bg-surface shadow-2xl"
       >
         {/* Header */}
         <div className="flex items-center gap-3 border-b border-border px-5 py-3">

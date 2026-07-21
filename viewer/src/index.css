@@ -48,6 +48,35 @@ body {
   overflow-x: hidden;
 }
 
+/* Keep native scrollbars inside the Flight Recorder dark palette. */
+* {
+  scrollbar-width: thin;
+  scrollbar-color: var(--color-border) var(--color-bg);
+}
+
+*::-webkit-scrollbar {
+  width: 10px;
+  height: 10px;
+}
+
+*::-webkit-scrollbar-track {
+  background: var(--color-bg);
+}
+
+*::-webkit-scrollbar-thumb {
+  background: var(--color-border);
+  border: 2px solid var(--color-bg);
+  border-radius: 999px;
+}
+
+*::-webkit-scrollbar-thumb:hover {
+  background: var(--color-ink-faint);
+}
+
+*::-webkit-scrollbar-corner {
+  background: var(--color-bg);
+}
+
 /* One sanctioned pulse: sensitive-row arrival + REC dot. Reduced-motion kills it. */
 @keyframes fr-pulse {
   0% { box-shadow: 0 0 0 0 rgba(242, 86, 75, 0.55); }
@@ -62,15 +91,23 @@ body {
   from { opacity: 0; transform: translateY(-8px); }
   to { opacity: 1; transform: translateY(0); }
 }
+@keyframes fr-slide-in-right {
+  from { opacity: 0; transform: translateX(24px); }
+  to { opacity: 1; transform: translateX(0); }
+}
 
 .fr-pulse { animation: fr-pulse 1.1s ease-out 1; }
 .fr-rec-dot { animation: fr-rec 1.6s ease-in-out infinite; }
 .fr-slide-in { animation: fr-slide-in 0.2s ease-out 1; }
+.fr-slide-in-right { animation: fr-slide-in-right 0.2s ease-out 1; }
 
 @media (prefers-reduced-motion: reduce) {
   .fr-pulse,
   .fr-rec-dot,
   .fr-slide-in {
+    animation: none !important;
+  }
+  .fr-slide-in-right {
     animation: none !important;
   }
 }

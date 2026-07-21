@@ -1,5 +1,6 @@
 import type { FlightEvent, Session, SummaryResponse } from "../types";
 import { RISK_TIERS } from "../types";
+import type { Provider } from "./agents";
 
 const API_BASE = import.meta.env.VITE_API_URL || "/api";
 
@@ -12,6 +13,7 @@ interface RawEvent {
   ts: number;
   phase: string;
   tool: string;
+  provider: string | null;
   arguments_json: string | null;
   result_json: string | null;
   exit_ok: 0 | 1 | null;
@@ -44,6 +46,12 @@ interface RawSession {
   token_limit?: number | null;
   token_used?: number | null;
   time_limit_s?: number | null;
+  provider?: string | null;
+}
+
+const KNOWN_PROVIDERS = new Set<string>(["claude", "codex", "openai-api"]);
+function normalizeProvider(raw: string | null | undefined): Provider {
+  return raw && KNOWN_PROVIDERS.has(raw) ? (raw as Provider) : "unknown";
 }
 
 // Parse a JSON-string column without ever throwing. The hook truncates
@@ -83,6 +91,7 @@ export function normalizeEvent(raw: RawEvent): FlightEvent {
     ts: raw.ts,
     phase: raw.phase as FlightEvent["phase"],
     tool: raw.tool,
+    provider: normalizeProvider(raw.provider),
     arguments_json: looseJson(raw.arguments_json) ?? {},
     result_json: looseJson(raw.result_json),
     // ponytail: exit_ok null (in-flight pre event) maps to true so pending
@@ -117,6 +126,7 @@ export function normalizeSession(raw: RawSession): Session {
     cwd: raw.cwd,
     git_repo: raw.git_repo ?? undefined,
     source: SOURCE_MAP[raw.source ?? ""] ?? "interactive",
+    provider: normalizeProvider(raw.provider),
     live: raw.ended_at == null,
     project_key: raw.project_key,
     project: raw.project,

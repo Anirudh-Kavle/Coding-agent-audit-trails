@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from "react";
-import { type FlightEvent, type RiskTier, RISK_TIERS, type Session } from "./types";
+import type { FlightEvent, Session } from "./types";
 import { dataSource } from "./lib/dataSource";
 import { getUsage, updateBudget } from "./lib/api";
 import { useEventStream } from "./hooks/useEventStream";
@@ -13,6 +13,10 @@ import { DetailDrawer } from "./components/DetailDrawer";
 import { EmptyState } from "./components/EmptyState";
 import { SessionStatsBar } from "./components/SessionStatsBar";
 import { SessionSummaryPanel } from "./components/SessionSummary";
+import { Pagination } from "./components/Pagination";
+import type { Provider } from "./lib/agents";
+
+const PAGE_SIZE = 50;
 
 export default function App() {
   const { events, loading, lastArrivalId } = useEventStream();
@@ -24,7 +28,9 @@ export default function App() {
   const [selectedId, setSelectedId] = useState<number | null>(null);
   const [drawerOpen, setDrawerOpen] = useState(false);
   const [search, setSearch] = useState("");
-  const [riskFilter, setRiskFilter] = useState<Set<RiskTier>>(new Set(RISK_TIERS));
+  const [sidebarWidth, setSidebarWidth] = useState(260);
+  const [agentFilter, setAgentFilter] = useState<Provider | null>(null);
+  const [page, setPage] = useState(1);
   const searchRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
@@ -35,10 +41,34 @@ export default function App() {
   const live = sessions.some((s) => s.live);
   const searching = search.trim().length > 0;
 
+  // Sessions scoped to the selected agent — drives the sidebar's project tree
+  // and the "which session/project am I even allowed to have selected" checks
+  // below.
+  const scopedSessions = useMemo(
+    () => (agentFilter ? sessions.filter((s) => s.provider === agentFilter) : sessions),
+    [sessions, agentFilter]
+  );
+
+  // Switching agent scope away from whatever's selected (session, folder, or
+  // project group) clears that selection rather than silently showing an
+  // empty timeline.
+  useEffect(() => {
+    if (!agentFilter) return;
+    if (selectedSession && !scopedSessions.some((s) => s.id === selectedSession)) {
+      setSelectedSession(null);
+    }
+    if (selectedProject && !scopedSessions.some((s) => projectKeyOf(s) === selectedProject)) {
+      setSelectedProject(null);
+    }
+    if (selectedGroup && !scopedSessions.some((s) => projectNameOf(s) === selectedGroup)) {
+      setSelectedGroup(null);
+    }
+  }, [agentFilter, selectedSession, selectedProject, selectedGroup, scopedSessions]);
+
   // Full-database search: the loaded timeline holds only the newest events,
-  // so an active query also asks the backend (FTS over every session ever
-  // recorded). Debounced; the client-side filter below gives instant results
-  // over loaded events until the full set arrives.
+  // so an active query also asks the backend (FTS + qualifiers over every
+  // session ever recorded). Debounced; the client-side filter below gives
+  // instant results over loaded events until the full set arrives.
   const [remoteResults, setRemoteResults] = useState<FlightEvent[] | null>(null);
   useEffect(() => {
     if (!searching) {
@@ -63,31 +93,55 @@ export default function App() {
   }, [search, searching]);
 
   // Scope hierarchy: session > folder/clone (project key) > project name
-  // (all folders of that name) > everything. A scope is just a session set.
+  // (all folders of that name) > everything, all within the agent scope.
   const scopeSessionIds = useMemo(() => {
     if (selectedSession) return null; // session filter handles it directly
     if (selectedProject) {
       return new Set(
-        sessions.filter((s) => projectKeyOf(s) === selectedProject).map((s) => s.id)
+        scopedSessions.filter((s) => projectKeyOf(s) === selectedProject).map((s) => s.id)
       );
     }
     if (selectedGroup) {
       return new Set(
-        sessions.filter((s) => projectNameOf(s) === selectedGroup).map((s) => s.id)
+        scopedSessions.filter((s) => projectNameOf(s) === selectedGroup).map((s) => s.id)
       );
     }
     return null;
-  }, [sessions, selectedSession, selectedProject, selectedGroup]);
+  }, [scopedSessions, selectedSession, selectedProject, selectedGroup]);
 
-  // Filter pipeline: scope → risk filter → search. Newest-first.
+  // Events restricted to the agent scope only — the base for both the stats
+  // bar (which ignores the search box) and the searchable timeline below.
+  const agentScopedEvents = useMemo(
+    () => (agentFilter ? events.filter((e) => e.provider === agentFilter) : events),
+    [events, agentFilter]
+  );
+
+  // Filter pipeline: agent scope → session/project scope → search (free text
+  // + qualifiers, either from the backend once it answers or the client-side
+  // fallback while it's in flight). Newest-first.
   const visible = useMemo(() => {
-    let list = searching && remoteResults ? remoteResults : events;
+    // remoteResults comes straight from the backend, which doesn't know about
+    // the agent scope — re-apply it here. A no-op when the base list is
+    // already agentScopedEvents (already filtered).
+    let list = searching && remoteResults ? remoteResults : agentScopedEvents;
+    if (agentFilter) list = list.filter((e) => e.provider === agentFilter);
     if (selectedSession) list = list.filter((e) => e.session_id === selectedSession);
     else if (scopeSessionIds) list = list.filter((e) => scopeSessionIds.has(e.session_id));
-    list = list.filter((e) => riskFilter.has(e.risk));
     if (searching && !remoteResults) list = filterEvents(list, search);
     return [...list].sort(byNewest);
-  }, [events, remoteResults, selectedSession, scopeSessionIds, riskFilter, search, searching]);
+  }, [agentScopedEvents, remoteResults, agentFilter, selectedSession, scopeSessionIds, search, searching]);
+
+  // Changing scope (agent/session/project/search) invalidates the current page.
+  useEffect(() => {
+    setPage(1);
+  }, [agentFilter, selectedSession, selectedProject, selectedGroup, search]);
+
+  const totalPages = Math.max(1, Math.ceil(visible.length / PAGE_SIZE));
+  const currentPage = Math.min(page, totalPages);
+  const paged = useMemo(
+    () => visible.slice((currentPage - 1) * PAGE_SIZE, currentPage * PAGE_SIZE),
+    [visible, currentPage]
+  );
 
   // Search hits and summary citations can reference events outside the loaded
   // stream — check the remote result set and the citation-fetched event too.
@@ -114,20 +168,11 @@ export default function App() {
     });
   };
 
-  const toggleRisk = (r: RiskTier) => {
-    setRiskFilter((prev) => {
-      const next = new Set(prev);
-      if (next.has(r)) next.delete(r);
-      else next.add(r);
-      return next;
-    });
-  };
-
   const moveSelection = (delta: number) => {
-    if (visible.length === 0) return;
-    const idx = visible.findIndex((e) => e.id === selectedId);
-    const nextIdx = Math.max(0, Math.min(visible.length - 1, (idx < 0 ? -1 : idx) + delta));
-    setSelectedId(visible[nextIdx].id);
+    if (paged.length === 0) return;
+    const idx = paged.findIndex((e) => e.id === selectedId);
+    const nextIdx = Math.max(0, Math.min(paged.length - 1, (idx < 0 ? -1 : idx) + delta));
+    setSelectedId(paged[nextIdx].id);
   };
 
   useKeyboardNav({
@@ -158,6 +203,8 @@ export default function App() {
         search={search}
         onSearch={setSearch}
         onClearSearch={() => setSearch("")}
+        sessions={scopedSessions}
+        agentFilter={agentFilter}
         sessionBudget={
           budgetSession
             ? {
@@ -178,22 +225,25 @@ export default function App() {
 
       <div className="flex min-h-0 flex-1">
         <SessionSidebar
-          sessions={sessions}
+          sessions={scopedSessions}
+          allSessions={sessions}
+          width={sidebarWidth}
+          onWidthChange={setSidebarWidth}
           selectedSession={selectedSession}
           onSelectSession={setSelectedSession}
           selectedProject={selectedProject}
           onSelectProject={setSelectedProject}
           selectedGroup={selectedGroup}
           onSelectGroup={setSelectedGroup}
-          riskFilter={riskFilter}
-          onToggleRisk={toggleRisk}
+          agentFilter={agentFilter}
+          onSelectAgent={setAgentFilter}
         />
 
         <main className="relative flex min-h-0 min-w-0 flex-1 flex-col">
           <SessionStatsBar
-            selectedSession={sessions.find((s) => s.id === selectedSession) ?? null}
+            selectedSession={scopedSessions.find((s) => s.id === selectedSession) ?? null}
             scopeSessions={
-              scopeSessionIds ? sessions.filter((s) => scopeSessionIds.has(s.id)) : sessions
+              scopeSessionIds ? scopedSessions.filter((s) => scopeSessionIds.has(s.id)) : scopedSessions
             }
             scopeLabel={
               selectedProject
@@ -203,7 +253,9 @@ export default function App() {
                   : `all projects`
             }
             events={
-              scopeSessionIds ? events.filter((e) => scopeSessionIds.has(e.session_id)) : events
+              scopeSessionIds
+                ? agentScopedEvents.filter((e) => scopeSessionIds.has(e.session_id))
+                : agentScopedEvents
             }
           />
           {selectedSession && (
@@ -214,16 +266,18 @@ export default function App() {
             />
           )}
           <Timeline
-            events={visible}
+            key={currentPage}
+            events={paged}
             loading={loading}
             selectedId={selectedId}
-            lastArrivalId={lastArrivalId}
+            lastArrivalId={currentPage === 1 ? lastArrivalId : null}
             onSelect={(id) => {
               setSelectedId(id);
               setDrawerOpen(true);
             }}
             empty={<EmptyState mode={searching ? "no-results" : "no-events"} />}
           />
+          <Pagination page={currentPage} totalPages={totalPages} onChange={setPage} />
           <DetailDrawer event={selectedEvent} onClose={() => setDrawerOpen(false)} />
         </main>
       </div>

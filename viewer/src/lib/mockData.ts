@@ -13,6 +13,7 @@ export const mockSessions: Session[] = [
     cwd: "/Users/dev/staging-deploy",
     git_repo: "staging-deploy",
     source: "interactive",
+    provider: "claude",
     live: true,
   },
   {
@@ -23,6 +24,7 @@ export const mockSessions: Session[] = [
     cwd: "/Users/dev/staging-deploy",
     git_repo: "staging-deploy",
     source: "interactive",
+    provider: "codex",
   },
   {
     id: "sess_docs",
@@ -32,6 +34,7 @@ export const mockSessions: Session[] = [
     cwd: "/Users/dev/handbook",
     git_repo: "handbook",
     source: "headless",
+    provider: "openai-api",
   },
 ];
 
@@ -42,6 +45,7 @@ export const mockEvents: FlightEvent[] = [
     ts: now - 5 * MIN,
     phase: "post",
     tool: "Read",
+    provider: "claude",
     arguments_json: { file_path: "config/deploy.yaml" },
     result_json: { content: "api:\n  port: 8080\n  debug: false" },
     exit_ok: true,
@@ -62,6 +66,7 @@ export const mockEvents: FlightEvent[] = [
     ts: now - 4 * MIN,
     phase: "post",
     tool: "Edit",
+    provider: "claude",
     arguments_json: {
       file_path: "config/deploy.yaml",
       old_string: "debug: false",
@@ -86,6 +91,7 @@ export const mockEvents: FlightEvent[] = [
     ts: now - 3 * MIN,
     phase: "post",
     tool: "Bash",
+    provider: "claude",
     arguments_json: { command: "npm run migrate" },
     result_json: {
       stdout: "Running migrations...\n✓ 001_init.sql\n✓ 002_auth.sql",
@@ -109,6 +115,7 @@ export const mockEvents: FlightEvent[] = [
     ts: now - 90_000,
     phase: "post",
     tool: "Bash",
+    provider: "claude",
     arguments_json: { command: "useradd -m -s /bin/bash staging-svc" },
     result_json: { stdout: "", exit_code: 0 },
     exit_ok: true,
@@ -129,6 +136,7 @@ export const mockEvents: FlightEvent[] = [
     ts: now - 30_000,
     phase: "post",
     tool: "WebFetch",
+    provider: "claude",
     arguments_json: { url: "https://api.internal/deploy", method: "POST" },
     result_json: { status: 200, body: { deployment_id: "dpl_9f2", status: "queued" } },
     exit_ok: true,
@@ -149,7 +157,8 @@ export const mockEvents: FlightEvent[] = [
     session_id: "sess_fix_auth",
     ts: now - 50 * MIN,
     phase: "post",
-    tool: "Edit",
+    tool: "apply_patch",
+    provider: "codex",
     arguments_json: {
       file_path: "config/deploy.yaml",
       old_string: "TOKEN_TTL=3600",
@@ -172,7 +181,8 @@ export const mockEvents: FlightEvent[] = [
     session_id: "sess_docs",
     ts: now - DAY - 2.5 * HOUR,
     phase: "post",
-    tool: "Write",
+    tool: "write_file",
+    provider: "openai-api",
     arguments_json: { file_path: "docs/architecture.md", content: "# Architecture\n..." },
     result_json: { success: true },
     exit_ok: true,
@@ -208,6 +218,7 @@ export function generateMockEvent(): FlightEvent {
     ts,
     phase: "post",
     tool: t.tool,
+    provider: "claude",
     arguments_json: t.args,
     result_json: { status: "ok" },
     exit_ok: true,
