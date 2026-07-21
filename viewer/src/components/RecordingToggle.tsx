@@ -33,7 +33,7 @@ export function RecordingToggle() {
       disabled={busy}
       aria-pressed={!paused}
       title={paused ? "Recording paused — click to resume" : "Recording active — click to pause"}
-      className={`inline-flex items-center gap-2 rounded-md border px-3 py-1.5 font-mono text-xs font-medium tracking-wide transition-colors disabled:opacity-60 ${
+      className={`inline-flex items-center gap-2 rounded-md border px-3 py-1.5 font-mono text-sm font-medium tracking-wide transition-colors disabled:opacity-60 ${
         paused
           ? "border-border text-ink-faint hover:text-ink"
           : "border-rec/40 text-rec hover:bg-rec/10"

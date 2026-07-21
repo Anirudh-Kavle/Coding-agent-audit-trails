@@ -1,6 +1,6 @@
 import type { Provider } from "../lib/agents";
 
-// Flight Recorder event types — mirror of the SQLite `events` row (spec 3.3).
+// Zetesis event types — mirror of the SQLite `events` row (spec 3.3).
 export type RiskTier = "info" | "write" | "exec" | "network" | "sensitive";
 
 export interface FlightEvent {
@@ -10,6 +10,7 @@ export interface FlightEvent {
   phase: "pre" | "post" | "compact" | "session";
   tool: string;
   provider: Provider; // which agent's hook recorded this event
+  turn_id?: string; // groups every action from the same single prompt/turn
   arguments_json: Record<string, unknown>;
   result_json?: Record<string, unknown>;
   exit_ok: boolean | null; // null = no PostToolUse observed yet — unresolved, not "ok"

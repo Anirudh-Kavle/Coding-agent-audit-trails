@@ -1,9 +1,9 @@
-"""Gate tests for deterministic risk classification (flight_recorder/risk.py
+"""Gate tests for deterministic risk classification (zetesis/risk.py
 + risk_rules.yaml).
 
 Run: .venv/bin/python -m pytest test_risk.py
 """
-from flight_recorder import risk
+from zetesis import risk
 
 
 def _args(command: str) -> str:

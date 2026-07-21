@@ -9,6 +9,7 @@ const rawEvent = {
   phase: "post",
   tool: "Bash",
   provider: "claude",
+  turn_id: "turn-1",
   arguments_json: '{"command":"npm test"}',
   result_json: '{"stdout":"ok","exit_code":0}',
   exit_ok: 1 as const,

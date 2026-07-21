@@ -123,7 +123,7 @@ export const PROVIDER_TOOLS: Record<KnownProvider, ToolTag[]> = {
     { id: "codex:multi_tool_use", tool: "multi_tool_use", kind: "other", risk: "exec", description: "Wraps several parallel tool calls issued in one turn.", names: ["multi_tool_use"] },
     { id: "codex:mcp", tool: "mcp__*", kind: "mcp", risk: "exec", description: "Calls a tool exposed by an MCP server.", names: [], prefix: "mcp__" },
   ],
-  // The bundled `fr api-ui` agent (flight_recorder/agent.py TOOLS) — only
+  // The bundled `fr api-ui` agent (zetesis/agent.py TOOLS) — only
   // these four tools are wired up today; WebSearch/file-search/code
   // interpreter/MCP are not in its TOOLS list. Every call also carries a
   // required, visible `reason` argument (captured as the event's WHY).

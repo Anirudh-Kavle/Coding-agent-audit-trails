@@ -1,6 +1,8 @@
-import { useLayoutEffect, useRef, useState, type ReactNode } from "react";
+import { useLayoutEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import type { FlightEvent } from "../types";
 import { EventRow } from "./EventRow";
+import { EventGroupRow } from "./EventGroupRow";
+import { groupConsecutive } from "../lib/groupEvents";
 import { Skeleton } from "./Skeleton";
 
 interface Props {
@@ -17,6 +19,7 @@ const AT_TOP = 8; // px tolerance for "still live at the top"
 // Vertical stream, newest at top. Auto-scroll pauses the instant the user scrolls
 // away from the top; a "paused — N new" pill returns them to live (spec 4.2).
 export function Timeline({ events, loading, selectedId, lastArrivalId, onSelect, empty }: Props) {
+  const groups = useMemo(() => groupConsecutive(events), [events]);
   const scrollRef = useRef<HTMLDivElement>(null);
   const prevLen = useRef(events.length);
   const prevScrollH = useRef(0);
@@ -76,15 +79,25 @@ export function Timeline({ events, loading, selectedId, lastArrivalId, onSelect,
         ) : events.length === 0 ? (
           empty
         ) : (
-          events.map((e) => (
-            <EventRow
-              key={e.id}
-              event={e}
-              selected={e.id === selectedId}
-              isNew={e.id === lastArrivalId}
-              onClick={() => onSelect(e.id)}
-            />
-          ))
+          groups.map((g) =>
+            g.events.length === 1 ? (
+              <EventRow
+                key={g.key}
+                event={g.events[0]}
+                selected={g.events[0].id === selectedId}
+                isNew={g.events[0].id === lastArrivalId}
+                onClick={() => onSelect(g.events[0].id)}
+              />
+            ) : (
+              <EventGroupRow
+                key={g.key}
+                events={g.events}
+                selectedId={selectedId}
+                lastArrivalId={lastArrivalId}
+                onSelect={onSelect}
+              />
+            )
+          )
         )}
       </div>
     </div>

@@ -1,4 +1,4 @@
-# Flight Recorder
+# Zetesis
 
 A local, real-time black box for AI coding-agent sessions. It captures every
 consequential action (shell commands, file edits, network calls, account/
@@ -13,7 +13,7 @@ It works with three kinds of session, side by side in the same store:
 - **Codex CLI** — via its native hook system
 - **The bundled API agent** (`fr api-ui`) — a small terminal coding agent
   built directly on the OpenAI Responses API, for when you want a
-  Flight-Recorder-native agent instead of hooking into an existing CLI
+  Zetesis-native agent instead of hooking into an existing CLI
 
 All three write into the same SQLite store and show up together (or
 filtered by agent) in the viewer UI.
@@ -147,8 +147,8 @@ fr test-notification          test the desktop sensitive-action alert
 ```
 
 Sensitive-risk events trigger a best-effort desktop alert before execution.
-Set `FLIGHT_RECORDER_NOTIFY=0` to disable alerts; notification failures
-never block the agent.
+Set `ZETESIS_NOTIFY=0` to disable alerts; notification failures never
+block the agent.
 
 ## Viewer feature tour
 
@@ -161,29 +161,167 @@ recording pause/resume.
 
 ## Layout
 
-- `flight_recorder/hook.py` — the hook entry point every provider calls
+- `zetesis/hook.py` — the hook entry point every provider calls
   (PreToolUse, PostToolUse, PreCompact, SessionStart, Stop, ...). Exits 0
   unconditionally — a recorder that can break the agent's controls is worse
   than no recorder.
-- `flight_recorder/reasoning.py` — extracts the reasoning window preceding
+- `zetesis/reasoning.py` — extracts the reasoning window preceding
   an action from the live transcript; PreCompact snapshot shield.
-- `flight_recorder/risk.py` + `risk_rules.yaml` — deterministic risk tiering.
-- `flight_recorder/agent.py` — the OpenAI Responses API agent loop behind
+- `zetesis/risk.py` + `risk_rules.yaml` — deterministic risk tiering.
+- `zetesis/agent.py` — the OpenAI Responses API agent loop behind
   `fr agent` / `fr api-ui`.
-- `flight_recorder/store.py` — SQLite (WAL) + JSONL mirror, no daemon.
-- `flight_recorder/viewer/` — FastAPI app serving the API + the built React UI.
-- `flight_recorder/cli.py` — the `fr` command group.
+- `zetesis/store.py` — SQLite (WAL) + JSONL mirror, no daemon.
+- `zetesis/viewer/` — FastAPI app serving the API + the built React UI.
+- `zetesis/cli.py` — the `fr` command group.
 
 ## Store location
 
-`~/.flight-recorder/` — `recorder.db`, `events/YYYY-MM-DD.jsonl`,
+`~/.zetesis/` — `recorder.db`, `events/YYYY-MM-DD.jsonl`,
 `snapshots/<session>/`, `debug/raw_payloads.jsonl`.
 
 ## Known gaps (honest, not hidden)
 
-- Reasoning extraction (`flight_recorder/reasoning.py`) is defensive but
+- Reasoning extraction (`zetesis/reasoning.py`) is defensive but
   not exhaustively validated against every real transcript shape across
   providers — raw hook payloads are always dumped to
-  `~/.flight-recorder/debug/raw_payloads.jsonl` for exactly that kind of
+  `~/.zetesis/debug/raw_payloads.jsonl` for exactly that kind of
   debugging.
 - No incident report export, multi-session cross-search, or file diffs yet.
+
+## Complete Windows setup and runbook
+
+The following commands assume Windows PowerShell and a fresh clone. Run them
+from the repository root (`cd` into your local clone of this repo first).
+
+### Install dependencies
+
+Run this once, or after changing Python dependencies or package metadata:
+
+```powershell
+python -m pip install -e .
+npm install
+```
+
+The editable Python install makes the `fr` and `fr-hook` commands point at the
+working copy. It does not need to be repeated for every session.
+
+### Optional clean database reset
+
+Stop all running Zetesis, Vite, Claude, and Codex sessions first. The following
+deletes all locally recorded history, events, snapshots, and debug payloads:
+
+```powershell
+$zetesisStore = Join-Path $env:USERPROFILE ".zetesis"
+$legacyStore = Join-Path $env:USERPROFILE ".flight-recorder"
+
+if (Test-Path -LiteralPath $zetesisStore) {
+    Remove-Item -LiteralPath $zetesisStore -Recurse -Force
+}
+
+if (Test-Path -LiteralPath $legacyStore) {
+    Remove-Item -LiteralPath $legacyStore -Recurse -Force
+}
+```
+
+### Initialize the database and hooks
+
+```powershell
+fr init
+fr status
+```
+
+This creates the SQLite/JSONL store under `C:\Users\<user>\.zetesis` and
+registers the project Codex hooks in `.codex\hooks.json`. Open Codex’s `/hooks`
+panel once and trust the project hooks.
+
+Claude uses the project `.claude\settings.json` hook configuration when it is
+present. Do not commit API keys or local settings files.
+
+### Start the backend viewer API
+
+Use Terminal 1 and leave it running (from the repository root):
+
+```powershell
+fr ui --port 7878 --no-browser
+```
+
+The FastAPI backend is available at `http://127.0.0.1:7878`.
+
+If port 7878 is already occupied, inspect it with:
+
+```powershell
+Get-NetTCPConnection -LocalPort 7878 -ErrorAction SilentlyContinue
+```
+
+### Start the development frontend
+
+Use Terminal 2 (from the repository root):
+
+```powershell
+npm run dev
+```
+
+Open `http://localhost:5173`. Vite proxies `/api` requests to the backend on
+port 7878. For a production-style static viewer, run `npm run build` and use
+`fr ui` without Vite.
+
+### Configure and run the OpenAI API agent
+
+Create or update the project `.env` file:
+
+```env
+OPENAI_API_KEY=your_openai_api_key_here
+```
+
+Use Terminal 3 (from the repository root):
+
+```powershell
+fr api-ui `
+  --token-limit 50000 `
+  --time-limit 900 `
+  --daily-token-limit 100000
+```
+
+Inside `fr api-ui`:
+
+```text
+/help      show commands
+/status    show recorder and budget status
+/clear     clear API conversation context but keep history
+/quit      exit the API session
+```
+
+The API budget can also be edited from the viewer’s token-budget control. The
+terminal refreshes its displayed limits from the shared database.
+
+### Run Claude and Codex sessions
+
+From the project root, use a separate terminal for each session:
+
+```powershell
+claude
+```
+
+For Codex, open Codex in the project root, then open `/hooks` once and confirm
+that the project hooks are active. Hook events will be written to the same
+Zetesis store and appear in the viewer alongside API events.
+
+### Verify the installation
+
+```powershell
+fr status
+fr test-hook
+fr test-notification
+python -m pytest -q
+```
+
+Useful inspection commands:
+
+```powershell
+fr grep "calculator"
+Get-ChildItem "$env:USERPROFILE\.zetesis" -Recurse
+```
+
+The viewer supports agent filters for Claude, Codex, and API sessions. Token
+limit controls are currently focused on the OpenAI API agent; Claude and Codex
+records remain visible and searchable.

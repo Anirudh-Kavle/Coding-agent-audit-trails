@@ -8,12 +8,20 @@ CREATE TABLE IF NOT EXISTS sessions (
     title TEXT,
     token_limit INTEGER,
     time_limit_s INTEGER,
-    token_used INTEGER NOT NULL DEFAULT 0
+    token_used INTEGER NOT NULL DEFAULT 0,
+    current_turn_id TEXT
 );
 
 CREATE TABLE IF NOT EXISTS api_usage (
     day TEXT PRIMARY KEY,
     token_count INTEGER NOT NULL DEFAULT 0,
+    updated_at INTEGER NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS budget_settings (
+    scope TEXT PRIMARY KEY,
+    token_limit INTEGER,
+    time_limit_s INTEGER,
     updated_at INTEGER NOT NULL
 );
 

@@ -20,7 +20,7 @@ export function EmptyState({ mode }: { mode: "no-events" | "no-results" }) {
       <div>
         <p className="text-base font-medium text-ink">Nothing recorded yet.</p>
         <p className="mt-1 text-sm text-ink-muted">
-          Flight Recorder captures every action your agent takes — and why.
+          Zetesis captures every action your agent takes — and why.
         </p>
       </div>
       <ol className="flex flex-col gap-3 text-left">
