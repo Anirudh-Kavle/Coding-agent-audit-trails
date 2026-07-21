@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from "react";
-import { type RiskTier, RISK_TIERS, type Session } from "./types";
+import type { Session } from "./types";
 import { dataSource } from "./lib/dataSource";
 import { getUsage, updateBudget } from "./lib/api";
 import { useEventStream } from "./hooks/useEventStream";
@@ -11,6 +11,10 @@ import { SessionSidebar } from "./components/SessionSidebar";
 import { Timeline } from "./components/Timeline";
 import { DetailDrawer } from "./components/DetailDrawer";
 import { EmptyState } from "./components/EmptyState";
+import { Pagination } from "./components/Pagination";
+import type { Provider } from "./lib/agents";
+
+const PAGE_SIZE = 50;
 
 export default function App() {
   const { events, loading, lastArrivalId } = useEventStream();
@@ -20,7 +24,9 @@ export default function App() {
   const [selectedId, setSelectedId] = useState<number | null>(null);
   const [drawerOpen, setDrawerOpen] = useState(false);
   const [search, setSearch] = useState("");
-  const [riskFilter, setRiskFilter] = useState<Set<RiskTier>>(new Set(RISK_TIERS));
+  const [sidebarWidth, setSidebarWidth] = useState(260);
+  const [agentFilter, setAgentFilter] = useState<Provider | null>(null);
+  const [page, setPage] = useState(1);
   const searchRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
@@ -31,33 +37,52 @@ export default function App() {
   const live = sessions.some((s) => s.live);
   const searching = search.trim().length > 0;
 
-  // Filter pipeline: session scope → risk filter → search. Newest-first for the timeline.
+  // Sessions scoped to the selected agent — drives both the sidebar list and
+  // the "which session am I even allowed to pick" constraint below.
+  const scopedSessions = useMemo(
+    () => (agentFilter ? sessions.filter((s) => s.provider === agentFilter) : sessions),
+    [sessions, agentFilter]
+  );
+
+  // Switching agent scope away from the selected session's own agent clears
+  // the session selection rather than silently showing an empty timeline.
+  useEffect(() => {
+    if (!agentFilter || !selectedSession) return;
+    if (!scopedSessions.some((s) => s.id === selectedSession)) setSelectedSession(null);
+  }, [agentFilter, selectedSession, scopedSessions]);
+
+  // Filter pipeline: agent scope → session scope → search (which now also
+  // carries risk:/tool:/file:/session: qualifiers from the search bar's
+  // filter panel). Newest-first.
   const visible = useMemo(() => {
     let list = events;
+    if (agentFilter) list = list.filter((e) => e.provider === agentFilter);
     if (selectedSession) list = list.filter((e) => e.session_id === selectedSession);
-    list = list.filter((e) => riskFilter.has(e.risk));
     if (searching) list = filterEvents(list, search);
     return [...list].sort(byNewest);
-  }, [events, selectedSession, riskFilter, search, searching]);
+  }, [events, agentFilter, selectedSession, search, searching]);
+
+  // Changing scope (agent/session/search) invalidates the current page.
+  useEffect(() => {
+    setPage(1);
+  }, [agentFilter, selectedSession, search]);
+
+  const totalPages = Math.max(1, Math.ceil(visible.length / PAGE_SIZE));
+  const currentPage = Math.min(page, totalPages);
+  const paged = useMemo(
+    () => visible.slice((currentPage - 1) * PAGE_SIZE, currentPage * PAGE_SIZE),
+    [visible, currentPage]
+  );
 
   const selectedEvent = drawerOpen
     ? events.find((e) => e.id === selectedId) ?? null
     : null;
 
-  const toggleRisk = (r: RiskTier) => {
-    setRiskFilter((prev) => {
-      const next = new Set(prev);
-      if (next.has(r)) next.delete(r);
-      else next.add(r);
-      return next;
-    });
-  };
-
   const moveSelection = (delta: number) => {
-    if (visible.length === 0) return;
-    const idx = visible.findIndex((e) => e.id === selectedId);
-    const nextIdx = Math.max(0, Math.min(visible.length - 1, (idx < 0 ? -1 : idx) + delta));
-    setSelectedId(visible[nextIdx].id);
+    if (paged.length === 0) return;
+    const idx = paged.findIndex((e) => e.id === selectedId);
+    const nextIdx = Math.max(0, Math.min(paged.length - 1, (idx < 0 ? -1 : idx) + delta));
+    setSelectedId(paged[nextIdx].id);
   };
 
   useKeyboardNav({
@@ -79,6 +104,8 @@ export default function App() {
         search={search}
         onSearch={setSearch}
         onClearSearch={() => setSearch("")}
+        sessions={scopedSessions}
+        agentFilter={agentFilter}
         sessionBudget={(() => { const s = sessions.find((x) => x.token_limit); return s?.token_limit ? { id: s.id, used: s.token_used ?? 0, limit: s.token_limit, timeLimit: s.time_limit_s } : undefined; })()}
         dailyTokens={dailyTokens}
         onBudgetSaved={async (tokenLimit, timeLimit) => {
@@ -91,25 +118,30 @@ export default function App() {
 
       <div className="flex min-h-0 flex-1">
         <SessionSidebar
-          sessions={sessions}
+          sessions={scopedSessions}
+          allSessions={sessions}
+          width={sidebarWidth}
+          onWidthChange={setSidebarWidth}
           selectedSession={selectedSession}
           onSelectSession={setSelectedSession}
-          riskFilter={riskFilter}
-          onToggleRisk={toggleRisk}
+          agentFilter={agentFilter}
+          onSelectAgent={setAgentFilter}
         />
 
         <main className="relative flex min-h-0 min-w-0 flex-1 flex-col">
           <Timeline
-            events={visible}
+            key={currentPage}
+            events={paged}
             loading={loading}
             selectedId={selectedId}
-            lastArrivalId={lastArrivalId}
+            lastArrivalId={currentPage === 1 ? lastArrivalId : null}
             onSelect={(id) => {
               setSelectedId(id);
               setDrawerOpen(true);
             }}
             empty={<EmptyState mode={searching ? "no-results" : "no-events"} />}
           />
+          <Pagination page={currentPage} totalPages={totalPages} onChange={setPage} />
           <DetailDrawer event={selectedEvent} onClose={() => setDrawerOpen(false)} />
         </main>
       </div>

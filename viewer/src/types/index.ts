@@ -1,3 +1,5 @@
+import type { Provider } from "../lib/agents";
+
 // Flight Recorder event types — mirror of the SQLite `events` row (spec 3.3).
 export type RiskTier = "info" | "write" | "exec" | "network" | "sensitive";
 
@@ -7,6 +9,7 @@ export interface FlightEvent {
   ts: number; // ms epoch
   phase: "pre" | "post" | "compact" | "session";
   tool: string;
+  provider: Provider; // which agent's hook recorded this event
   arguments_json: Record<string, unknown>;
   result_json?: Record<string, unknown>;
   exit_ok: boolean;
@@ -28,6 +31,7 @@ export interface Session {
   cwd: string;
   git_repo?: string;
   source: "interactive" | "headless" | "resumed";
+  provider: Provider; // agent that started this session, derived from its earliest event
   label?: string; // human-friendly name for the sidebar
   live?: boolean; // currently recording
   token_limit?: number;

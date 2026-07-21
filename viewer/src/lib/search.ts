@@ -7,9 +7,10 @@ export interface ParsedQuery {
   risk?: string;
   file?: string;
   session?: string;
+  agent?: string;
 }
 
-const QUALIFIERS = ["tool", "risk", "file", "session"] as const;
+const QUALIFIERS = ["tool", "risk", "file", "session", "agent"] as const;
 
 // Hand-rolled qualifier parser (spec 3.2) — tool: risk: file: session: + free text. No lib.
 export function parseQuery(q: string): ParsedQuery {
@@ -32,12 +33,30 @@ export function activeQualifier(q: string): string | null {
   return m && (QUALIFIERS as readonly string[]).includes(m[1]) ? m[1] : null;
 }
 
+// A qualifier value can be a comma-separated OR-list (risk:write,exec) — the
+// filter panel writes these when more than one checkbox is checked. `tool:`
+// additionally supports `+`-joined aliases within one element (a single tool
+// tag can cover several raw names, e.g. Codex's "bash+run_command") and a
+// trailing `*` for prefix matches (mcp__*).
+function splitList(value: string): string[] {
+  return value.split(",").map((v) => v.trim()).filter(Boolean);
+}
+
 export function filterEvents(events: FlightEvent[], q: string): FlightEvent[] {
   const p = parseQuery(q);
   return events.filter((e) => {
-    if (p.tool && e.tool.toLowerCase() !== p.tool) return false;
-    if (p.risk && e.risk !== p.risk) return false;
-    if (p.session && !e.session_id.toLowerCase().includes(p.session)) return false;
+    if (p.tool) {
+      const tokens = splitList(p.tool).flatMap((t) => t.split("+"));
+      const lower = e.tool.toLowerCase();
+      const match = tokens.some((t) => (t.endsWith("*") ? lower.startsWith(t.slice(0, -1)) : lower === t));
+      if (!match) return false;
+    }
+    if (p.risk && !splitList(p.risk).includes(e.risk)) return false;
+    if (p.agent && e.provider.toLowerCase() !== p.agent) return false;
+    if (p.session) {
+      const lower = e.session_id.toLowerCase();
+      if (!splitList(p.session).some((s) => lower.includes(s))) return false;
+    }
     if (p.file) {
       const files = (e.files_touched ?? []).join(" ").toLowerCase();
       if (!files.includes(p.file)) return false;

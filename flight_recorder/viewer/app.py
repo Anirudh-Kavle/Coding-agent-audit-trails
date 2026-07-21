@@ -41,7 +41,10 @@ def list_sessions() -> list[dict]:
             """
             SELECT s.id, s.started_at, s.ended_at, s.cwd, s.git_repo, s.source,
                    s.token_limit, s.time_limit_s, s.token_used,
-                   COUNT(e.id) as event_count, MAX(e.ts) as last_event_ts
+                   COUNT(e.id) as event_count, MAX(e.ts) as last_event_ts,
+                   (SELECT provider FROM events
+                    WHERE session_id = s.id AND provider IS NOT NULL
+                    ORDER BY ts ASC LIMIT 1) as provider
             FROM sessions s
             LEFT JOIN events e ON e.session_id = s.id
             GROUP BY s.id

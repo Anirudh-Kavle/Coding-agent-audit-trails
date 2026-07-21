@@ -1,6 +1,8 @@
 import { type FlightEvent, RISK_DOT } from "../types";
 import { formatTime, eventSummary, reasoningFirstLine } from "../lib/format";
 import { RiskBadge } from "./RiskBadge";
+import { PROVIDER_SHORT, PROVIDER_DESCRIPTION } from "../lib/agents";
+import { Tooltip } from "./Tooltip";
 
 interface Props {
   event: FlightEvent;
@@ -42,6 +44,11 @@ export function EventRow({ event, selected, isNew, onClick }: Props) {
         <span className="shrink-0 rounded bg-surface-2 px-1.5 py-0.5 font-mono text-[10px] font-medium uppercase tracking-wide text-ink-muted">
           {event.tool}
         </span>
+        <Tooltip label={PROVIDER_DESCRIPTION[event.provider]} className="shrink-0 inline-flex">
+          <span className="rounded border border-border-soft px-1.5 py-0.5 font-mono text-[10px] uppercase tracking-wide text-ink-faint">
+            {PROVIDER_SHORT[event.provider]}
+          </span>
+        </Tooltip>
         <span className="min-w-0 flex-1 truncate font-mono text-sm text-ink">
           {eventSummary(event)}
         </span>

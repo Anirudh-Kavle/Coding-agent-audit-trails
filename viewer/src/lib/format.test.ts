@@ -9,6 +9,7 @@ const base: FlightEvent = {
   ts: Date.now(),
   phase: "post",
   tool: "Bash",
+  provider: "claude",
   arguments_json: { command: "npm test" },
   exit_ok: true,
   risk: "exec",

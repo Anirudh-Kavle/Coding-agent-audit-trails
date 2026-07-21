@@ -1,20 +1,34 @@
-import { type Session, type RiskTier, RISK_TIERS, RISK_DOT, RISK_LABEL } from "../types";
+import { type Session } from "../types";
 import { formatTime, dayLabel } from "../lib/format";
+import {
+  type Provider,
+  PROVIDERS,
+  PROVIDER_LABEL,
+  PROVIDER_SHORT,
+} from "../lib/agents";
+import { Tooltip } from "./Tooltip";
+import { ProviderIcon } from "./ProviderIcon";
 
 interface Props {
-  sessions: Session[];
+  width: number;
+  onWidthChange: (width: number) => void;
+  sessions: Session[]; // already scoped by agentFilter — counts reflect what's actually shown
+  allSessions: Session[]; // full, unscoped list — used only for per-agent session counts
   selectedSession: string | null;
   onSelectSession: (id: string | null) => void;
-  riskFilter: Set<RiskTier>;
-  onToggleRisk: (r: RiskTier) => void;
+  agentFilter: Provider | null;
+  onSelectAgent: (p: Provider | null) => void;
 }
 
 export function SessionSidebar({
+  width,
+  onWidthChange,
   sessions,
+  allSessions,
   selectedSession,
   onSelectSession,
-  riskFilter,
-  onToggleRisk,
+  agentFilter,
+  onSelectAgent,
 }: Props) {
   // Group sessions by day bucket, preserving order.
   const groups = new Map<string, Session[]>();
@@ -24,8 +38,46 @@ export function SessionSidebar({
   }
 
   return (
-    <aside className="flex w-60 shrink-0 flex-col border-r border-border bg-surface/40">
-      <div className="min-h-0 flex-1 overflow-y-auto px-2 py-3">
+    <aside style={{ width }} className="relative flex min-w-52 max-w-[38vw] shrink-0 flex-col overflow-hidden border-r border-border bg-surface/40">
+      {/* Agent scope — splits the unified timeline by which hook recorded the
+          event, since Claude Code and Codex can run against the same repo at once. */}
+      <div className="border-b border-border px-3 py-3">
+        <SidebarHeading>Agent</SidebarHeading>
+        <div className="mt-1 flex flex-wrap gap-1">
+          <button
+            onClick={() => onSelectAgent(null)}
+            className={[
+              "cursor-pointer rounded-full border px-2.5 py-1 font-mono text-[11px] transition-colors",
+              agentFilter === null
+                ? "border-transparent bg-surface-2 text-ink"
+                : "border-border text-ink-muted hover:bg-surface/70 hover:text-ink",
+            ].join(" ")}
+          >
+            All ({allSessions.length})
+          </button>
+          {PROVIDERS.map((p) => {
+            const count = allSessions.filter((s) => s.provider === p).length;
+            const on = agentFilter === p;
+            return (
+              <button
+                key={p}
+                onClick={() => onSelectAgent(on ? null : p)}
+                className={[
+                  "flex cursor-pointer items-center gap-1 rounded-full border px-2.5 py-1 font-mono text-[11px] transition-colors",
+                  on
+                    ? "border-transparent bg-surface-2 text-ink"
+                    : "border-border text-ink-muted hover:bg-surface/70 hover:text-ink",
+                ].join(" ")}
+              >
+                <ProviderIcon provider={p} />
+                {PROVIDER_SHORT[p]} ({count})
+              </button>
+            );
+          })}
+        </div>
+      </div>
+
+      <div className="min-h-0 flex-1 overflow-y-auto overflow-x-hidden px-2 py-3">
         <SidebarHeading>Sessions</SidebarHeading>
         <button
           onClick={() => onSelectSession(null)}
@@ -64,6 +116,13 @@ export function SessionSidebar({
                   />
                   <span className="font-mono text-xs text-ink-faint">{formatTime(s.started_at)}</span>
                   <span className="truncate text-xs text-ink">{s.label ?? s.id}</span>
+                  {agentFilter === null && (
+                    <Tooltip label={PROVIDER_LABEL[s.provider]} className="ml-auto shrink-0">
+                      <span className="rounded bg-surface-2 px-1 py-0.5 font-mono text-[9px] uppercase text-ink-faint">
+                        {PROVIDER_SHORT[s.provider]}
+                      </span>
+                    </Tooltip>
+                  )}
                 </span>
               </button>
             ))}
@@ -71,43 +130,21 @@ export function SessionSidebar({
         ))}
       </div>
 
-      {/* Risk filters */}
-      <div className="border-t border-border px-3 py-3">
-        <SidebarHeading>Filters</SidebarHeading>
-        <div className="mt-1 space-y-1">
-          {RISK_TIERS.map((r) => {
-            const on = riskFilter.has(r);
-            return (
-              <label
-                key={r}
-                className="flex cursor-pointer items-center gap-2 rounded px-1 py-0.5 text-xs transition-colors hover:bg-surface/70"
-              >
-                <input
-                  type="checkbox"
-                  checked={on}
-                  onChange={() => onToggleRisk(r)}
-                  className="peer sr-only"
-                />
-                <span
-                  className={[
-                    "flex h-3.5 w-3.5 items-center justify-center rounded-sm border",
-                    on ? "border-transparent" : "border-border",
-                    on ? RISK_DOT[r] : "",
-                  ].join(" ")}
-                  aria-hidden
-                >
-                  {on && (
-                    <svg className="h-2.5 w-2.5 text-bg" viewBox="0 0 24 24" fill="none">
-                      <path d="M5 12l5 5L20 7" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round" />
-                    </svg>
-                  )}
-                </span>
-                <span className={on ? "text-ink" : "text-ink-muted"}>{RISK_LABEL[r]}</span>
-              </label>
-            );
-          })}
-        </div>
-      </div>
+      <div
+        role="separator"
+        aria-label="Resize sidebar"
+        aria-orientation="vertical"
+        onPointerDown={(event) => {
+          event.currentTarget.setPointerCapture(event.pointerId);
+          const startX = event.clientX;
+          const startWidth = width;
+          const move = (e: PointerEvent) => onWidthChange(Math.max(208, Math.min(window.innerWidth * 0.38, startWidth + e.clientX - startX)));
+          const up = () => { window.removeEventListener("pointermove", move); window.removeEventListener("pointerup", up); };
+          window.addEventListener("pointermove", move);
+          window.addEventListener("pointerup", up, { once: true });
+        }}
+        className="absolute inset-y-0 right-0 z-10 w-1 cursor-col-resize transition-colors hover:bg-risk-write/60"
+      />
     </aside>
   );
 }
