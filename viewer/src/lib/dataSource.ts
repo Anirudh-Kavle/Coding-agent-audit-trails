@@ -57,9 +57,17 @@ const mockSource: DataSource = {
   },
 };
 
+// The backend defaults /api/sessions/{id}/events to limit=500 as a sanity
+// cap, not a UI page size — asking for it explicitly here means the app's
+// actual history window is a deliberate choice, not an accident of whatever
+// the backend's default happens to be.
+// ponytail: still a hard cap, not real pagination — raise further (or add a
+// "load more") if a single local install's history ever grows past this.
+const EVENT_HISTORY_LIMIT = "5000";
+
 const liveSource: DataSource = {
   getSessions: api.getSessions,
-  getEvents: (sessionId) => api.getEvents(sessionId),
+  getEvents: (sessionId) => api.getEvents(sessionId, { limit: EVENT_HISTORY_LIMIT }),
   getEvent: (id) => api.getEvent(id),
   search: (query) => api.search(query),
   subscribe: (onEvent) => api.streamEvents(onEvent),
