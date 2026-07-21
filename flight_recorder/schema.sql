@@ -8,8 +8,7 @@ CREATE TABLE IF NOT EXISTS sessions (
     title TEXT,
     token_limit INTEGER,
     time_limit_s INTEGER,
-    token_used INTEGER NOT NULL DEFAULT 0,
-    summary TEXT
+    token_used INTEGER NOT NULL DEFAULT 0
 );
 
 CREATE TABLE IF NOT EXISTS api_usage (

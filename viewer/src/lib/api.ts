@@ -1,4 +1,4 @@
-import type { FlightEvent, Session, SummaryResponse } from "../types";
+import type { FlightEvent, Session } from "../types";
 import { RISK_TIERS } from "../types";
 import type { Provider } from "./agents";
 
@@ -43,7 +43,6 @@ interface RawSession {
   git_branch?: string | null;
   project_key?: string;
   project?: string;
-  last_event_ts?: number | null;
   token_limit?: number | null;
   token_used?: number | null;
   time_limit_s?: number | null;
@@ -130,7 +129,6 @@ export function normalizeSession(raw: RawSession): Session {
     live: raw.ended_at == null,
     project_key: raw.project_key,
     project: raw.project,
-    last_event_ts: raw.last_event_ts ?? undefined,
     token_limit: raw.token_limit ?? undefined,
     token_used: raw.token_used ?? undefined,
     time_limit_s: raw.time_limit_s ?? undefined,
@@ -184,30 +182,11 @@ export async function getEvents(
   return raw.map(normalizeEvent);
 }
 
-export async function getEvent(id: number): Promise<FlightEvent | undefined> {
-  const res = await fetch(`${API_BASE}/events/${id}`);
-  if (!res.ok) throw new Error("Failed to fetch event");
-  const raw: RawEvent | null = await res.json();
-  return raw ? normalizeEvent(raw) : undefined;
-}
-
 export async function search(query: string): Promise<FlightEvent[]> {
   const res = await fetch(`${API_BASE}/search?q=${encodeURIComponent(query)}`);
   if (!res.ok) throw new Error("Failed to search");
   const raw: RawEvent[] = await res.json();
   return raw.map(normalizeEvent);
-}
-
-export async function getSummary(sessionId: string): Promise<SummaryResponse> {
-  const res = await fetch(`${API_BASE}/sessions/${sessionId}/summary`);
-  if (!res.ok) throw new Error("Failed to fetch summary");
-  return res.json();
-}
-
-export async function generateSummary(sessionId: string): Promise<SummaryResponse> {
-  const res = await fetch(`${API_BASE}/sessions/${sessionId}/summary`, { method: "POST" });
-  if (!res.ok) throw new Error("Failed to generate summary");
-  return res.json();
 }
 
 export async function getRecordingPaused(): Promise<boolean> {

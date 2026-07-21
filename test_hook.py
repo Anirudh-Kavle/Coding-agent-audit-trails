@@ -123,6 +123,33 @@ def test_files_touched_populated_end_to_end_for_a_bash_command(isolated_store, t
     assert json.loads(row["files_touched"]) == ["node_modules"]
 
 
+def test_permission_request_does_not_duplicate_the_paired_event(isolated_store, tmp_path):
+    # Regression: Claude Code fires PreToolUse, PermissionRequest, and
+    # PostToolUse for the same call — PermissionRequest carries the same
+    # tool_name/tool_input but no tool_use_id and no outcome of its own.
+    # Recording it as its own row duplicated every permission-gated action
+    # in the timeline (seen live while dogfooding).
+    common = {
+        "session_id": "sess1",
+        "cwd": str(tmp_path),
+        "tool_name": "Bash",
+        "tool_input": {"command": "npm run build"},
+    }
+    hook._handle({**common, "hook_event_name": "PreToolUse", "tool_use_id": "toolu_1"})
+    hook._handle({**common, "hook_event_name": "PermissionRequest"})
+    hook._handle({
+        **common, "hook_event_name": "PostToolUse", "tool_use_id": "toolu_1",
+        "tool_response": {"exit_code": 0},
+    })
+
+    conn = store.get_conn()
+    rows = conn.execute("SELECT phase, exit_ok FROM events WHERE tool='Bash'").fetchall()
+    conn.close()
+    assert len(rows) == 1
+    assert rows[0]["phase"] == "pre"
+    assert rows[0]["exit_ok"] == 1
+
+
 def test_migration_adds_tool_use_id_to_a_pre_existing_db(tmp_path, monkeypatch):
     # Simulates a real install from before tool_use_id existed: the events
     # table has no such column. get_conn() must upgrade it transparently —

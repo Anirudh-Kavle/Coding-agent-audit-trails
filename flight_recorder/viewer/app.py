@@ -258,36 +258,6 @@ def search(q: str = "", limit: int = 200) -> list[dict]:
         conn.close()
 
 
-@app.get("/api/sessions/{session_id}/summary")
-def get_summary(session_id: str) -> dict:
-    """Cached local-LLM summary plus whether generation is possible here."""
-    from .. import summarizer
-
-    conn = _conn()
-    try:
-        cached = summarizer.load_cached_summary(conn, session_id)
-    finally:
-        conn.close()
-    return {"summary": cached, "available": summarizer.enabled()}
-
-
-@app.post("/api/sessions/{session_id}/summary")
-def generate_summary(session_id: str) -> dict:
-    """Generate (or regenerate) a summary with the local model. Slow on CPU —
-    tens of seconds — which is why it only ever runs on explicit request.
-    Sync endpoint on purpose: FastAPI runs it in a worker thread."""
-    from .. import summarizer
-
-    if not summarizer.enabled():
-        return {"summary": None, "available": False,
-                "error": f"no local model — put a .gguf in {summarizer.MODELS_DIR}"}
-    try:
-        record = summarizer.summarize_session(session_id)
-    except Exception as exc:
-        return {"summary": None, "available": True, "error": str(exc)}
-    return {"summary": record, "available": True}
-
-
 @app.get("/api/recording")
 def get_recording() -> dict:
     return {"paused": store.is_paused()}

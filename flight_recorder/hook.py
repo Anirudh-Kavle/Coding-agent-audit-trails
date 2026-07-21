@@ -17,7 +17,6 @@ from . import gitstate, notifier, reasoning, risk, store, tools
 PHASE_MAP = {
     "PreToolUse": "pre",
     "PostToolUse": "post",
-    "PermissionRequest": "session",
     "PreCompact": "compact",
     "SessionStart": "session",
     "SessionEnd": "session",
@@ -114,6 +113,15 @@ def _handle(payload: dict, provider: str | None = None) -> None:
 
     hook_event_name = payload.get("hook_event_name", "Unknown")
     store.append_raw_payload(hook_event_name, payload)
+
+    # PermissionRequest carries the same tool_name/tool_input as the
+    # PreToolUse/PostToolUse pair for the same call, but no tool_use_id to
+    # pair on and no outcome of its own (the decision isn't known yet at
+    # this hook) — recording it as its own row just duplicated every
+    # permission-gated action in the timeline. The real pair already
+    # captures everything worth keeping.
+    if hook_event_name == "PermissionRequest":
+        return
 
     phase = PHASE_MAP.get(hook_event_name, "session")
     session_id = payload.get("session_id") or "unknown-session"

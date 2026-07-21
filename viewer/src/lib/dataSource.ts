@@ -1,4 +1,4 @@
-import type { FlightEvent, Session, SummaryResponse } from "../types";
+import type { FlightEvent, Session } from "../types";
 import { mockEvents, mockSessions, generateMockEvent } from "./mockData";
 import { filterEvents, sessionTitleMap } from "./search";
 import * as api from "./api";
@@ -13,10 +13,7 @@ const MOCK_STREAM_MS = 4000;
 export interface DataSource {
   getSessions(): Promise<Session[]>;
   getEvents(sessionId?: string): Promise<FlightEvent[]>;
-  getEvent(id: number): Promise<FlightEvent | undefined>;
   search(query: string): Promise<FlightEvent[]>;
-  getSummary(sessionId: string): Promise<SummaryResponse>;
-  generateSummary(sessionId: string): Promise<SummaryResponse>;
   subscribe(onEvent: (e: FlightEvent) => void): () => void;
   getRecordingPaused(): Promise<boolean>;
   setRecordingPaused(paused: boolean): Promise<boolean>;
@@ -35,18 +32,8 @@ const mockSource: DataSource = {
       ? mockEvents.filter((e) => e.session_id === sessionId)
       : mockEvents;
   },
-  async getEvent(id) {
-    return mockEvents.find((e) => e.id === id);
-  },
   async search(query) {
     return filterEvents(mockEvents, query, sessionTitleMap(mockSessions));
-  },
-  // No local model in mock mode — the summary panel simply hides itself.
-  async getSummary() {
-    return { summary: null, available: false };
-  },
-  async generateSummary() {
-    return { summary: null, available: false };
   },
   subscribe(onEvent) {
     const timer = setInterval(() => {
@@ -77,10 +64,7 @@ const EVENT_HISTORY_LIMIT = "5000";
 const liveSource: DataSource = {
   getSessions: api.getSessions,
   getEvents: (sessionId) => api.getEvents(sessionId, { limit: EVENT_HISTORY_LIMIT }),
-  getEvent: (id) => api.getEvent(id),
   search: (query) => api.search(query),
-  getSummary: (sessionId) => api.getSummary(sessionId),
-  generateSummary: (sessionId) => api.generateSummary(sessionId),
   subscribe: (onEvent) => api.streamEvents(onEvent),
   getRecordingPaused: api.getRecordingPaused,
   setRecordingPaused: api.setRecordingPaused,

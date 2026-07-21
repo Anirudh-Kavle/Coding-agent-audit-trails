@@ -12,7 +12,6 @@ import { Timeline } from "./components/Timeline";
 import { DetailDrawer } from "./components/DetailDrawer";
 import { EmptyState } from "./components/EmptyState";
 import { SessionStatsBar } from "./components/SessionStatsBar";
-import { SessionSummaryPanel } from "./components/SessionSummary";
 import { Pagination } from "./components/Pagination";
 import type { Provider } from "./lib/agents";
 
@@ -147,30 +146,11 @@ export default function App() {
     [visible, currentPage]
   );
 
-  // Search hits and summary citations can reference events outside the loaded
-  // stream — check the remote result set and the citation-fetched event too.
-  const [fetchedEvent, setFetchedEvent] = useState<FlightEvent | null>(null);
+  // Search hits can reference events outside the loaded stream — check the
+  // remote result set too.
   const selectedEvent = drawerOpen
-    ? events.find((e) => e.id === selectedId) ??
-      remoteResults?.find((e) => e.id === selectedId) ??
-      (fetchedEvent?.id === selectedId ? fetchedEvent : null)
+    ? events.find((e) => e.id === selectedId) ?? remoteResults?.find((e) => e.id === selectedId) ?? null
     : null;
-
-  // Summary citation click: the cited event may be anywhere in history.
-  const openCitedEvent = (id: number) => {
-    const local = events.find((e) => e.id === id) ?? remoteResults?.find((e) => e.id === id);
-    if (local) {
-      setSelectedId(id);
-      setDrawerOpen(true);
-      return;
-    }
-    dataSource.getEvent(id).then((e) => {
-      if (!e) return;
-      setFetchedEvent(e);
-      setSelectedId(id);
-      setDrawerOpen(true);
-    });
-  };
 
   const moveSelection = (delta: number) => {
     if (paged.length === 0) return;
@@ -262,13 +242,6 @@ export default function App() {
                 : agentScopedEvents
             }
           />
-          {selectedSession && (
-            <SessionSummaryPanel
-              sessionId={selectedSession}
-              lastEventTs={sessions.find((s) => s.id === selectedSession)?.last_event_ts}
-              onOpenEvent={openCitedEvent}
-            />
-          )}
           <Timeline
             key={currentPage}
             events={paged}

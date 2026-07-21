@@ -35,16 +35,6 @@ command hook for each event you want captured:
 }
 ```
 
-Optional — local AI session summaries (free, fully offline, ~30s per summary
-on CPU). Adds a "Generate session summary" button to the viewer that writes
-3-5 grounded sentences with clickable `[event N]` citations:
-
-```bash
-pip install llama-cpp-python --only-binary :all: \
-    --extra-index-url https://abetlen.github.io/llama-cpp-python/whl/cpu
-python scripts/get_model.py    # one-time ~1 GB download to ~/.flight-recorder/models
-```
-
 Optional — the API-backed agent (needs `OPENAI_API_KEY` in the env or `.env`):
 
 ```bash
@@ -56,7 +46,7 @@ with folder sub-groups for multiple checkouts; deterministic per-scope stat
 line (actions / commands / edits / failed / sensitive); full-database search
 with qualifiers (`tool:` `risk:` `file:` `session:` `exit:` `provider:`
 `after:` `before:`); per-session token/time budgets editable from the top bar;
-recording pause/resume; local-model summaries with verified citations.
+recording pause/resume.
 
 ---
 

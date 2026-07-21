@@ -35,21 +35,6 @@ export interface SessionStats {
   git_branch?: string;
 }
 
-// Local-LLM prose summary cached in sessions.summary. Citations in `text`
-// look like "[event 123]" and are validated server-side against real rows.
-export interface SessionSummary {
-  text: string;
-  model?: string | null;
-  generated_at?: number | null;
-  legacy?: boolean; // pre-citation-pipeline summary of unknown provenance
-}
-
-export interface SummaryResponse {
-  summary: SessionSummary | null;
-  available: boolean; // whether this install can generate (model present)
-  error?: string;
-}
-
 export interface Session {
   id: string;
   started_at: number;
@@ -64,7 +49,6 @@ export interface Session {
   // Derived project identity: repo root when in git, else the working folder.
   project_key?: string; // full path — the grouping key
   project?: string; // folder/repo basename — the display name
-  last_event_ts?: number; // for summary staleness checks
   // API-agent budget limits (rate limiter), editable from the TopBar.
   token_limit?: number;
   token_used?: number;

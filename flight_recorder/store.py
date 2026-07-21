@@ -96,7 +96,7 @@ def init_db() -> None:
             if name not in columns:
                 conn.execute(f"ALTER TABLE events ADD COLUMN {name} TEXT")
         session_columns = {row[1] for row in conn.execute("PRAGMA table_info(sessions)")}
-        for name, definition in (("token_limit", "INTEGER"), ("time_limit_s", "INTEGER"), ("token_used", "INTEGER NOT NULL DEFAULT 0"), ("summary", "TEXT")):
+        for name, definition in (("token_limit", "INTEGER"), ("time_limit_s", "INTEGER"), ("token_used", "INTEGER NOT NULL DEFAULT 0")):
             if name not in session_columns:
                 conn.execute(f"ALTER TABLE sessions ADD COLUMN {name} {definition}")
         conn.execute("CREATE INDEX IF NOT EXISTS idx_events_tool_kind ON events(tool_kind)")

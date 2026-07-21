@@ -12,9 +12,6 @@ dependencies = [
 
 [project.optional-dependencies]
 dev = ["pytest>=8", "httpx>=0.27"]
-# Local session summaries. Wheels: pip install llama-cpp-python
-#   --extra-index-url https://abetlen.github.io/llama-cpp-python/whl/cpu
-llm = ["llama-cpp-python>=0.3"]
 
 [project.scripts]
 fr = "flight_recorder.cli:main"
