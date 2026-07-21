@@ -11,14 +11,14 @@ export const PROVIDER_LABEL: Record<Provider, string> = {
   claude: "Claude Code",
   codex: "Codex",
   "openai-api": "API Agent",
-  unknown: "Unknown",
+  unknown: "Other",
 };
 
 export const PROVIDER_SHORT: Record<Provider, string> = {
   claude: "Claude",
   codex: "Codex",
   "openai-api": "API",
-  unknown: "?",
+  unknown: "Other",
 };
 
 export const PROVIDER_DESCRIPTION: Record<Provider, string> = {
