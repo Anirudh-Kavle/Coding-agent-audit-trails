@@ -109,19 +109,19 @@ export const PROVIDER_TOOLS: Record<KnownProvider, ToolTag[]> = {
     { id: "claude:readmcpresourcetool", tool: "ReadMcpResourceTool", kind: "other", risk: "exec", description: "Reads a specific MCP resource by URI.", names: ["readmcpresourcetool"] },
     { id: "claude:waitformcpservers", tool: "WaitForMcpServers", kind: "other", risk: "exec", description: "Waits for MCP servers still connecting in the background.", names: ["waitformcpservers"] },
     { id: "claude:toolsearch", tool: "ToolSearch", kind: "other", risk: "exec", description: "Searches for and loads deferred MCP tools.", names: ["toolsearch"] },
-    { id: "claude:mcp", tool: "mcp__*", kind: "mcp", risk: "exec", description: "Calls an MCP server tool. Category and risk both default (mcp / exec) since neither is in the known catalog.", names: [], prefix: "mcp__" },
+    { id: "claude:mcp", tool: "mcp__*", kind: "mcp", risk: "exec", description: "Calls a tool exposed by an MCP server.", names: [], prefix: "mcp__" },
   ],
   // Verified against openai/codex (github.com/openai/codex) docs and the
   // OpenAI developer changelog, 2026-07. shell/run_command/Bash are all
   // observed aliases for the same exec tool across Codex versions.
   codex: [
     { id: "codex:bash", tool: "Bash / run_command / shell", kind: "bash", risk: "exec", description: "Runs a shell command or unified-exec call.", names: ["bash", "run_command", "shell"] },
-    { id: "codex:apply_patch", tool: "apply_patch", kind: "edit", risk: "write", description: "Adds, updates, or deletes a file via a unified patch. Category is \"write\" for a pure file-add, \"edit\" otherwise; risk tier is write either way.", names: ["apply_patch"] },
+    { id: "codex:apply_patch", tool: "apply_patch", kind: "edit", risk: "write", description: "Adds, updates, or deletes a file via a unified patch.", names: ["apply_patch"] },
     { id: "codex:update_plan", tool: "update_plan", kind: "other", risk: "info", description: "Updates Codex's internal task plan — no filesystem/shell effect.", names: ["update_plan"] },
     { id: "codex:view_image", tool: "view_image", kind: "read", risk: "info", description: "Views an image file.", names: ["view_image"] },
     { id: "codex:web_search", tool: "web_search", kind: "webfetch", risk: "exec", description: "Runs a web search when Codex's web-search option is enabled.", names: ["web_search"] },
     { id: "codex:multi_tool_use", tool: "multi_tool_use", kind: "other", risk: "exec", description: "Wraps several parallel tool calls issued in one turn.", names: ["multi_tool_use"] },
-    { id: "codex:mcp", tool: "mcp__*", kind: "mcp", risk: "exec", description: "Calls an MCP server tool. Category and risk both default (mcp / exec) since neither is in the known catalog.", names: [], prefix: "mcp__" },
+    { id: "codex:mcp", tool: "mcp__*", kind: "mcp", risk: "exec", description: "Calls a tool exposed by an MCP server.", names: [], prefix: "mcp__" },
   ],
   // The bundled `fr api-ui` agent (flight_recorder/agent.py TOOLS) — only
   // these four tools are wired up today; WebSearch/file-search/code
@@ -133,10 +133,10 @@ export const PROVIDER_TOOLS: Record<KnownProvider, ToolTag[]> = {
   // so all four fall through to `default_tier: exec` regardless of category,
   // then escalate to "sensitive" per-call if the args match a risk pattern.
   "openai-api": [
-    { id: "api:list_files", tool: "list_files", kind: "read", risk: "exec", description: "List files/directories under a path. Recorded category: read. Base risk tier: exec (default — this name isn't in risk_rules.yaml, so it doesn't get Read's info tier). Requires a visible `reason`.", names: ["list_files"] },
-    { id: "api:read_file", tool: "read_file", kind: "read", risk: "exec", description: "Read a UTF-8 text file. Recorded category: read. Base risk tier: exec (default — same reason as list_files). Requires a visible `reason`.", names: ["read_file"] },
-    { id: "api:write_file", tool: "write_file", kind: "write", risk: "exec", description: "Create or completely replace a UTF-8 text file. Recorded category: write. Base risk tier: exec (default, not Write's write tier); escalates to sensitive if the content matches a risk pattern. Requires a visible `reason`.", names: ["write_file"] },
-    { id: "api:run_command", tool: "run_command", kind: "bash", risk: "exec", description: "Run a shell command in the project root. Recorded category: bash. Base risk tier: exec; escalates to sensitive for patterns like rm -rf, sudo, curl/wget, secrets, etc. Requires a visible `reason`.", names: ["run_command"] },
+    { id: "api:list_files", tool: "list_files", kind: "read", risk: "exec", description: "Lists files or directories under a path.", names: ["list_files"] },
+    { id: "api:read_file", tool: "read_file", kind: "read", risk: "exec", description: "Reads a UTF-8 text file.", names: ["read_file"] },
+    { id: "api:write_file", tool: "write_file", kind: "write", risk: "exec", description: "Creates or replaces a UTF-8 text file.", names: ["write_file"] },
+    { id: "api:run_command", tool: "run_command", kind: "bash", risk: "exec", description: "Runs a shell command in the project root.", names: ["run_command"] },
   ],
 };
 

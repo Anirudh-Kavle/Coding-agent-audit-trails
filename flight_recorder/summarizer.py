@@ -147,6 +147,28 @@ def _strip_invalid_citations(text: str, valid_ids: set[int]) -> str:
     return CITATION_RE.sub(repl, text).strip()
 
 
+def _dedupe_repeated_citations(text: str) -> str:
+    """The model sometimes cites the same event on every sentence when one
+    record explains the whole session — correct, but [event 104] four times
+    over reads as noise, not rigor. Keep the citation on its first mention
+    and drop the marker (never the surrounding prose) on repeats."""
+    seen: set[int] = set()
+
+    def repl(match: re.Match) -> str:
+        event_id = int(match.group(1))
+        if event_id in seen:
+            return ""
+        seen.add(event_id)
+        return match.group(0)
+
+    deduped = CITATION_RE.sub(repl, text)
+    # A removed marker can leave "ran the tests ." or "the code ," behind —
+    # collapse the space that used to separate it from the citation.
+    deduped = re.sub(r"[ \t]+([.,;:!?])", r"\1", deduped)
+    deduped = re.sub(r"[ \t]{2,}", " ", deduped)
+    return deduped.strip()
+
+
 def _load_llm(model_path: Path):
     global _llm, _llm_path
     if _llm is not None and _llm_path == str(model_path):
@@ -185,7 +207,9 @@ def summarize_session(session_id: str, *, llm=None) -> dict | None:
         "citation like [event 12] pointing at a record above. Example "
         "sentence: 'The agent installed dependencies [event 12] and ran the "
         "tests, which failed [event 15].' Citations go inside the sentences, "
-        "never in a list at the end. /no_think"
+        "never in a list at the end. Cite each record at most once in the "
+        "whole summary — if one record covers several sentences, cite it "
+        "only the first time. /no_think"
     )
 
     with _llm_lock:  # one llama.cpp context; concurrent calls would corrupt it
@@ -201,6 +225,7 @@ def summarize_session(session_id: str, *, llm=None) -> dict | None:
     text = result["choices"][0]["message"]["content"] or ""
     text = THINK_RE.sub("", text).strip()
     text = _strip_invalid_citations(text, valid_ids)
+    text = _dedupe_repeated_citations(text)
     if not text:
         return None
 

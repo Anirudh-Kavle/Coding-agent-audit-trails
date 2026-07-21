@@ -194,7 +194,7 @@ def _handle(payload: dict, provider: str | None = None) -> None:
             tool_use_id = payload.get("tool_use_id")
             if tool_use_id:
                 pending = store.find_pre_event_by_tool_use_id(conn, session_id, tool_use_id)
-            if pending is None and not tool_use_id:
+            if pending is None:
                 pending = store.find_pending_pre_event(conn, session_id, tool_name)
 
         if pending is not None:

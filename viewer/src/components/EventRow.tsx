@@ -57,13 +57,9 @@ export function EventRow({ event, selected, isNew, onClick }: Props) {
         </span>
       </div>
 
-      {(why || event.capture_gap) && (
+      {why && (
         <p className="mt-1 truncate pl-5.5 text-xs italic">
-          {why ? (
-            <span className="text-ink-muted">↳ why: {why}</span>
-          ) : (
-            <span className="text-risk-exec">↳ reasoning unavailable</span>
-          )}
+          <span className="text-ink-muted">↳ why: {why}</span>
         </p>
       )}
     </button>

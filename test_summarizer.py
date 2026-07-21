@@ -84,6 +84,31 @@ def test_summarize_strips_invalid_citations_and_caches(seeded_store):
     assert cached["text"] == record["text"]
 
 
+def test_summarize_dedupes_repeated_citation_of_the_same_event(seeded_store):
+    # Regression: a summary that leans on one record for every sentence used
+    # to cite it every time — [event 1] four sentences running — which reads
+    # as noise, not rigor. Only the first mention should keep the citation.
+    fake = FakeLlm(
+        "The agent attempted to install dependencies [event 1] and ran the "
+        "tests, which failed [event 1]. The agent reached the daily API "
+        "token limit [event 1], resulting in a failure to proceed. The "
+        "agent changed the code to handle the token limit issue [event 1]."
+    )
+    record = summarizer.summarize_session("s1", llm=fake)
+    assert record["text"].count("[event 1]") == 1
+    # the prose itself must survive — only the repeated markers are dropped
+    assert "resulting in a failure to proceed." in record["text"]
+    assert "  " not in record["text"]  # no double-space left behind
+    assert " ." not in record["text"] and " ," not in record["text"]
+
+
+def test_summarize_keeps_distinct_citations_separate(seeded_store):
+    fake = FakeLlm("Ran tests [event 1] then fixed the bug [event 2].")
+    record = summarizer.summarize_session("s1", llm=fake)
+    assert "[event 1]" in record["text"]
+    assert "[event 2]" in record["text"]
+
+
 def test_summarize_strips_thinking_tags(seeded_store):
     fake = FakeLlm("<think>secret chain of thought</think>Tests were run [event 1].")
     record = summarizer.summarize_session("s1", llm=fake)

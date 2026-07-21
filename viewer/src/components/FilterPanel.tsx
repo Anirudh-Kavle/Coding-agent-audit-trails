@@ -26,30 +26,35 @@ function tagToken(tag: ToolTag): string {
 
 // Kind groups shown in the Tool column, in display order. Grouping by kind
 // (rather than one row per raw tool name) keeps the column scannable even
-// though the underlying catalog now has dozens of tools per agent.
-const KIND_GROUP_ORDER: { key: string; kinds: ToolKind[] }[] = [
-  { key: "bash", kinds: ["bash"] },
-  { key: "editwrite", kinds: ["edit", "write"] },
-  { key: "read", kinds: ["read"] },
-  { key: "webfetch", kinds: ["webfetch"] },
-  { key: "mcp", kinds: ["mcp"] },
-  { key: "other", kinds: ["other"] },
+// though the underlying catalog now has dozens of tools per agent. `label`
+// is a single category word (not every raw tool name joined together —
+// "Bash / Bash / run_command / shell / run_command" was the old row text).
+// `hint` is one plain sentence for the row's hover tooltip — deliberately
+// not a join of every tag's own description either, which for "other"
+// (30+ tools) turned into a run-on wall of text with no punctuation.
+const KIND_GROUP_ORDER: { key: string; kinds: ToolKind[]; label: string; hint: string }[] = [
+  { key: "bash", kinds: ["bash"], label: "Shell", hint: "Runs shell commands." },
+  { key: "editwrite", kinds: ["edit", "write"], label: "Files", hint: "Creates or modifies files." },
+  { key: "read", kinds: ["read"], label: "Read", hint: "Reads files or searches the codebase." },
+  { key: "webfetch", kinds: ["webfetch"], label: "Web", hint: "Fetches web pages or runs web searches." },
+  { key: "mcp", kinds: ["mcp"], label: "MCP", hint: "Calls tools exposed by connected MCP servers." },
+  { key: "other", kinds: ["other"], label: "Other", hint: "Planning, task tracking, scheduling, and workflow tools." },
 ];
 
 interface ToolGroup {
   key: string;
   label: string;
+  hint: string;
   risk: RiskTier;
   tags: ToolTag[];
 }
 
 function buildToolGroups(catalog: ToolTag[]): ToolGroup[] {
   const groups: ToolGroup[] = [];
-  for (const { key, kinds } of KIND_GROUP_ORDER) {
+  for (const { key, kinds, label, hint } of KIND_GROUP_ORDER) {
     const tags = catalog.filter((t) => kinds.includes(t.kind));
     if (tags.length === 0) continue;
-    const label = key === "mcp" ? "MCP" : key === "other" ? `Other (${tags.length})` : tags.map((t) => t.tool).join(" / ");
-    groups.push({ key, label, risk: tags[0].risk, tags });
+    groups.push({ key, label, hint, risk: tags[0].risk, tags });
   }
   return groups;
 }
@@ -188,7 +193,7 @@ export function FilterPanel({ value, onChange, sessions, agentFilter }: Props) {
                 onChange={() => toggleGroup(g)}
                 dotClass={RISK_DOT[g.risk]}
                 label={g.label}
-                title={g.tags.map((t) => t.description).join(" ")}
+                title={g.hint}
                 truncate
               />
             ))}
