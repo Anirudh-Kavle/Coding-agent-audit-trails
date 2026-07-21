@@ -2,7 +2,7 @@
 
 Notifications are deliberately out-of-band: a missing desktop session, blocked
 notification provider, or malformed message must never affect the agent hook.
-Set FLIGHT_RECORDER_NOTIFY=0 to disable them.
+Set ZETESIS_NOTIFY=0 to disable them.
 """
 from __future__ import annotations
 
@@ -13,7 +13,7 @@ import sys
 
 
 def enabled() -> bool:
-    return os.environ.get("FLIGHT_RECORDER_NOTIFY", "1").lower() not in {"0", "false", "no", "off"}
+    return os.environ.get("ZETESIS_NOTIFY", "1").lower() not in {"0", "false", "no", "off"}
 
 
 def _launch(command: list[str]) -> bool:
@@ -60,4 +60,4 @@ def notify(title: str, message: str) -> bool:
 
 def notify_sensitive(tool: str | None, reasons: list[str]) -> bool:
     reason = ", ".join(reasons[:2]) if reasons else "sensitive risk rule"
-    return notify("Flight Recorder: sensitive action", f"{tool or 'tool'} ({reason})")
+    return notify("Zetesis: sensitive action", f"{tool or 'tool'} ({reason})")

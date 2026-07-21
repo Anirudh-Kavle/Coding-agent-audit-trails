@@ -1,4 +1,4 @@
-"""OpenAI Responses API coding-agent loop, instrumented by Flight Recorder."""
+"""OpenAI Responses API coding-agent loop, instrumented by Zetesis."""
 from __future__ import annotations
 
 import json
@@ -10,7 +10,7 @@ from pathlib import Path
 from typing import Any, Callable
 
 from . import limits, store
-from .recorder import FlightRecorder
+from .recorder import ZetesisRecorder
 
 DEFAULT_MODEL = "gpt-5.6"
 MAX_TOOL_OUTPUT = 32 * 1024
@@ -261,16 +261,27 @@ class ApiAgentSession:
         self.model = model or os.environ.get("OPENAI_MODEL") or DEFAULT_MODEL
         self.client = client
         self.executor = ToolExecutor(root_path, assume_yes=assume_yes, confirm=confirm)
-        self.recorder = FlightRecorder(cwd=root_path, source="openai-api", model=self.model)
+        self.recorder = ZetesisRecorder(cwd=root_path, source="openai-api", model=self.model)
         self.started_monotonic = time.monotonic()
-        self.token_limit = token_limit
-        self.time_limit_s = time_limit_s
+        # A new API chat inherits the API scope configured in the viewer when
+        # the CLI did not provide an explicit override.
+        conn = store.get_conn()
+        try:
+            api_budget = store.get_budget(conn, "openai-api")
+            global_budget = store.get_budget(conn, "global")
+        finally:
+            conn.close()
+        inherited = api_budget or global_budget
+        self.token_limit = token_limit if token_limit is not None else (inherited["token_limit"] if inherited else None)
+        self.time_limit_s = time_limit_s if time_limit_s is not None else (inherited["time_limit_s"] if inherited else None)
         self.daily_token_limit = daily_token_limit
+        self.global_token_limit = None
+        self.provider_token_limit = None
         self.token_used = 0
         conn = store.get_conn()
         try:
             conn.execute("UPDATE sessions SET token_limit = ?, time_limit_s = ? WHERE id = ?",
-                         (token_limit, time_limit_s, self.recorder.session_id))
+                         (self.token_limit, self.time_limit_s, self.recorder.session_id))
             conn.commit()
         finally:
             conn.close()
@@ -288,11 +299,31 @@ class ApiAgentSession:
             self.token_limit = row["token_limit"]
             self.time_limit_s = row["time_limit_s"]
             self.token_used = max(self.token_used, int(row["token_used"] or 0))
+        conn = store.get_conn()
+        try:
+            global_budget = store.get_budget(conn, "global")
+            provider_budget = store.get_budget(conn, "openai-api")
+            self.global_token_limit = global_budget["token_limit"] if global_budget else None
+            self.provider_token_limit = provider_budget["token_limit"] if provider_budget else None
+        finally:
+            conn.close()
 
     def _limit_reason(self) -> str | None:
         self._sync_limits()
         if self.token_limit is not None and self.token_used >= self.token_limit:
             return f"Session token limit reached ({self.token_used}/{self.token_limit})."
+        conn = store.get_conn()
+        try:
+            global_used = int(conn.execute("SELECT COALESCE(SUM(token_used), 0) FROM sessions").fetchone()[0] or 0)
+            provider_used = int(conn.execute(
+                "SELECT COALESCE(SUM(token_used), 0) FROM sessions WHERE source = 'openai-api'"
+            ).fetchone()[0] or 0)
+        finally:
+            conn.close()
+        if self.global_token_limit is not None and global_used >= self.global_token_limit:
+            return f"Global token limit reached ({global_used}/{self.global_token_limit})."
+        if self.provider_token_limit is not None and provider_used >= self.provider_token_limit:
+            return f"OpenAI API token limit reached ({provider_used}/{self.provider_token_limit})."
         elapsed = limits.elapsed_seconds(self.started_monotonic)
         if self.time_limit_s is not None and elapsed >= self.time_limit_s:
             return f"Session time limit reached ({elapsed}s/{self.time_limit_s}s)."
@@ -372,7 +403,13 @@ class ApiAgentSession:
             response_summary = _reasoning_summary(response)
             calls = _function_calls(response)
             if not calls:
-                return response.output_text or ""
+                answer = response.output_text or ""
+                self.recorder.record_api_turn(
+                    task, answer, turn_id=turn_id,
+                    reasoning_text=response_summary, token_count=token_count,
+                    usage={"response_usage": str(getattr(response, "usage", ""))},
+                )
+                return answer
 
             for call in calls:
                 try:

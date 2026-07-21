@@ -2,7 +2,7 @@ import type { FlightEvent } from "../types";
 import type { ToolKind } from "./agents";
 import { eventSummary } from "./format";
 
-// Mirrors flight_recorder/tools.py's action_kind() closely enough for
+// Mirrors zetesis/tools.py's action_kind() closely enough for
 // grouping purposes — exact parity isn't needed here (e.g. apply_patch's
 // real write-vs-edit split depends on patch body, which we don't have
 // client-side), just a stable, coarse bucket per raw tool name.

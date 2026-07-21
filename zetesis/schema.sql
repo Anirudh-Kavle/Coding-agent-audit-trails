@@ -17,6 +17,13 @@ CREATE TABLE IF NOT EXISTS api_usage (
     updated_at INTEGER NOT NULL
 );
 
+CREATE TABLE IF NOT EXISTS budget_settings (
+    scope TEXT PRIMARY KEY,
+    token_limit INTEGER,
+    time_limit_s INTEGER,
+    updated_at INTEGER NOT NULL
+);
+
 CREATE TABLE IF NOT EXISTS events (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     session_id TEXT REFERENCES sessions(id),

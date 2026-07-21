@@ -1,7 +1,7 @@
-"""Gate tests for the viewer API (flight_recorder/viewer/app.py).
+"""Gate tests for the viewer API (zetesis/viewer/app.py).
 
 Runs against a temp SQLite DB by monkeypatching store.DB_PATH — the app's
-_conn() reads it at call time, so no real ~/.flight-recorder data is touched.
+_conn() reads it at call time, so no real ~/.zetesis data is touched.
 Run: .venv/bin/python -m pytest test_app.py
 """
 from pathlib import Path
@@ -9,10 +9,10 @@ from pathlib import Path
 import pytest
 from fastapi.testclient import TestClient
 
-from flight_recorder import store
-from flight_recorder.viewer.app import app
+from zetesis import store
+from zetesis.viewer.app import app
 
-SCHEMA = Path("flight_recorder/schema.sql").read_text()
+SCHEMA = Path("zetesis/schema.sql").read_text()
 
 
 def _seed(conn):

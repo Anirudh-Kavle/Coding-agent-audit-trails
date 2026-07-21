@@ -57,6 +57,37 @@ def _result_ok(response) -> int:
     return 1
 
 
+def _usage_tokens(payload: dict) -> int:
+    usage = payload.get("usage") or payload.get("token_usage") or {}
+    if not isinstance(usage, dict):
+        return 0
+    for key in ("total_tokens", "total", "tokens"):
+        try:
+            if usage.get(key) is not None:
+                return max(0, int(usage[key]))
+        except (TypeError, ValueError):
+            pass
+    return 0
+
+
+def _prompt_tokens(payload: dict) -> int:
+    """Estimate submitted-prompt tokens when a native hook exposes text.
+
+    Claude/Codex lifecycle hooks do not consistently include provider usage,
+    so this deterministic estimate is intentionally labeled as such in the
+    event payload. Four characters is a conservative, model-agnostic proxy.
+    """
+    for key in ("prompt", "user_prompt", "prompt_text", "message", "content"):
+        value = payload.get(key)
+        if isinstance(value, str) and value.strip():
+            return max(1, (len(value.strip()) + 3) // 4)
+        if isinstance(value, dict):
+            text = value.get("text") or value.get("content")
+            if isinstance(text, str) and text.strip():
+                return max(1, (len(text.strip()) + 3) // 4)
+    return 0
+
+
 def _handle(payload: dict, provider: str | None = None) -> None:
     if store.is_paused():
         return
@@ -75,7 +106,9 @@ def _handle(payload: dict, provider: str | None = None) -> None:
 
     conn = store.get_conn()
     try:
-        store.upsert_session(conn, session_id, ts, cwd, git.get("git_repo"), payload.get("source"))
+        provider_name = _provider(payload, provider)
+        store.upsert_session(conn, session_id, ts, cwd, git.get("git_repo"), provider_name)
+        store.apply_provider_budget(conn, session_id, provider_name)
 
         if hook_event_name == "SessionEnd":
             store.mark_session_ended(conn, session_id, ts)
@@ -92,7 +125,12 @@ def _handle(payload: dict, provider: str | None = None) -> None:
             reasoning.snapshot_transcript(transcript_path, session_id, store.SNAPSHOTS_DIR)
 
         arguments_text, args_truncated = _truncate(payload.get("tool_input"))
-        result_text, result_truncated = _truncate(payload.get("tool_response"))
+        tool_response = payload.get("tool_response")
+        if phase == "post" and tool_response is None:
+            recovered = reasoning.extract_tool_result(transcript_path, payload.get("tool_input"))
+            if recovered is not None:
+                tool_response = recovered
+        result_text, result_truncated = _truncate(tool_response)
 
         reasoning_text, capture_gap = (None, True)
         if phase == "pre" and tool_name:
@@ -115,7 +153,13 @@ def _handle(payload: dict, provider: str | None = None) -> None:
 
         exit_ok = None
         if phase == "post":
-            exit_ok = _result_ok(payload.get("tool_response"))
+            exit_ok = _result_ok(tool_response)
+        token_count = _usage_tokens(payload) if phase == "post" else (
+            _prompt_tokens(payload) if hook_event_name == "UserPromptSubmit" else 0
+        )
+        usage_payload = payload.get("usage") or payload.get("token_usage") or {}
+        if hook_event_name == "UserPromptSubmit" and token_count and not usage_payload:
+            usage_payload = {"estimated_prompt_tokens": token_count}
 
         event = {
             "session_id": session_id,
@@ -128,9 +172,11 @@ def _handle(payload: dict, provider: str | None = None) -> None:
             # that when present; otherwise fall back to the one this hook
             # mints itself on UserPromptSubmit/SessionStart (see above).
             "turn_id": payload.get("turn_id") or store.get_session_turn(conn, session_id),
-            "provider": _provider(payload, provider),
+            "provider": provider_name,
             "model": payload.get("model"),
             "notification_sent": notification_sent,
+            "token_count": token_count,
+            "usage_json": json.dumps(usage_payload),
             "arguments_json": arguments_text + ("...[truncated]" if args_truncated else ""),
             "result_json": result_text + ("...[truncated]" if result_truncated else ""),
             "exit_ok": exit_ok,
@@ -154,6 +200,8 @@ def _handle(payload: dict, provider: str | None = None) -> None:
 
         if pending is not None:
             store.update_event_result(conn, pending["id"], event["result_json"], event["exit_ok"])
+            if token_count:
+                store.update_session_usage(conn, session_id, token_count)
             merged = dict(pending)
             merged["result_json"] = event["result_json"]
             merged["exit_ok"] = event["exit_ok"]
@@ -176,6 +224,8 @@ def _handle(payload: dict, provider: str | None = None) -> None:
             store.append_jsonl(merged)
         else:
             row_id = store.insert_event(conn, event)
+            if token_count:
+                store.update_session_usage(conn, session_id, token_count)
             event["id"] = row_id
             current_id = row_id
             store.append_jsonl(event)

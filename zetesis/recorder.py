@@ -52,7 +52,7 @@ class ActionHandle:
         return event_id
 
 
-class FlightRecorder:
+class ZetesisRecorder:
     """Record tool calls without coupling capture to a model provider SDK."""
 
     def __init__(self, session_id: str | None = None, *, cwd: str | Path | None = None,
@@ -126,6 +126,32 @@ class FlightRecorder:
             "result_json": "", "exit_ok": 0, "reasoning_text": reason,
             "risk": "info", "risk_reasons": "[]", "capture_gap": 0,
             "token_count": token_count, "usage_json": _json(usage or {}),
+            "git_branch": None, "git_head": None, "git_dirty": None,
+            "files_touched": None,
+        }
+        conn = store.get_conn()
+        try:
+            event_id = store.insert_event(conn, event)
+            conn.commit()
+        finally:
+            conn.close()
+        event["id"] = event_id
+        store.append_jsonl(event)
+        return event_id
+
+    def record_api_turn(self, prompt: str, response: str, *, turn_id: str,
+                        reasoning_text: str | None = None, token_count: int = 0,
+                        usage: dict | None = None) -> int:
+        """Record a visible API turn even when the model used no tools."""
+        ts = _now_ms()
+        event = {
+            "session_id": self.session_id, "ts": ts, "phase": "session",
+            "tool": "API Turn", "tool_kind": "other", "turn_id": turn_id,
+            "action_id": turn_id, "completed_at": ts, "provider": self.source,
+            "model": self.model, "arguments_json": _json({"prompt": prompt}),
+            "result_json": _json({"response": response}), "exit_ok": 1,
+            "reasoning_text": reasoning_text, "risk": "info", "risk_reasons": "[]",
+            "capture_gap": 0, "token_count": token_count, "usage_json": _json(usage or {}),
             "git_branch": None, "git_head": None, "git_dirty": None,
             "files_touched": None,
         }

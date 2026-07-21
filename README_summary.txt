@@ -1,4 +1,4 @@
-FLIGHT RECORDER — Summary
+ZETESIS — Summary
 
 What it is: Local, real-time black box for Codex sessions. Logs every
 consequential action (shell commands, file edits, network calls, credential
@@ -25,7 +25,7 @@ Key files:
   viewer/       - FastAPI timeline UI
   cli.py        - fr commands
 
-Store location: ~/.flight-recorder/ (recorder.db, events/, snapshots/, debug/)
+Store location: ~/.zetesis/ (recorder.db, events/, snapshots/, debug/)
 
 Known gaps:
   - Reasoning parser unverified against real transcript shape

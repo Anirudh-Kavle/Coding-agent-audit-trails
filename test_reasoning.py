@@ -1,6 +1,6 @@
-"""Gate tests for reasoning.extract_reasoning (flight_recorder/reasoning.py).
+"""Gate tests for reasoning.extract_reasoning (zetesis/reasoning.py).
 
-Covers two real bugs found while dogfooding Flight Recorder on itself:
+Covers two real bugs found while dogfooding Zetesis on itself:
 
 1. Stale-turn misattribution: the transcript FILE can lag behind the hook's
    in-memory payload (tool_name/tool_input/tool_use_id come from live
@@ -16,7 +16,7 @@ Run: .venv/bin/python -m pytest test_reasoning.py
 """
 import json
 
-from flight_recorder import reasoning
+from zetesis import reasoning
 
 
 def _write(tmp_path, entries):

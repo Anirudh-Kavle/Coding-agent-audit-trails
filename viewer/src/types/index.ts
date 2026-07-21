@@ -1,6 +1,6 @@
 import type { Provider } from "../lib/agents";
 
-// Flight Recorder event types — mirror of the SQLite `events` row (spec 3.3).
+// Zetesis event types — mirror of the SQLite `events` row (spec 3.3).
 export type RiskTier = "info" | "write" | "exec" | "network" | "sensitive";
 
 export interface FlightEvent {

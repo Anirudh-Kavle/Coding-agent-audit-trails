@@ -1,4 +1,4 @@
-"""Gate test for the PostToolUse reasoning self-heal path (flight_recorder/hook.py).
+"""Gate test for the PostToolUse reasoning self-heal path (zetesis/hook.py).
 
 Regression for the real race found while dogfooding: the transcript FILE can
 lag behind the hook's live payload, so a PreToolUse capture can come back as
@@ -13,7 +13,7 @@ import sqlite3
 
 import pytest
 
-from flight_recorder import hook, store
+from zetesis import hook, store
 
 
 @pytest.fixture()
@@ -58,7 +58,7 @@ def _tool_result():
 def test_migration_adds_tool_use_id_to_a_pre_existing_db(tmp_path, monkeypatch):
     # Simulates a real install from before tool_use_id existed: the events
     # table has no such column. get_conn() must upgrade it transparently —
-    # the real ~/.flight-recorder/recorder.db on this machine is exactly this
+    # the real ~/.zetesis/recorder.db on this machine is exactly this
     # case, and the very next hook invocation must not crash on it.
     monkeypatch.setattr(store, "STORE_DIR", tmp_path)
     monkeypatch.setattr(store, "DB_PATH", tmp_path / "recorder.db")

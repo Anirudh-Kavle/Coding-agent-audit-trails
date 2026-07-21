@@ -1,4 +1,4 @@
-# Flight Recorder — Setup Guide
+# Zetesis — Setup Guide
 
 ## Environment Setup
 
@@ -25,7 +25,7 @@ npm run dev:store
 ### Project Structure
 
 ```
-flight-recorder/
+zetesis/
 ├── viewer/                 # React + Vite + Tailwind SPA
 │   ├── src/
 │   │   ├── components/    # Timeline, DetailDrawer, etc.
@@ -80,8 +80,8 @@ python -m fr_hook --dry-run  # Test hook locally
 ### Database
 
 The store service creates:
-- `~/.flight-recorder/recorder.db` — SQLite WAL mode
-- `~/.flight-recorder/events/` — JSONL daily mirrors
+- `~/.zetesis/recorder.db` — SQLite WAL mode
+- `~/.zetesis/events/` — JSONL daily mirrors
 
 ### Branch Strategy
 

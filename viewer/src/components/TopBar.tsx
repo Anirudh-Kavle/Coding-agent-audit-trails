@@ -1,6 +1,7 @@
 import { forwardRef, useEffect, useState } from "react";
 import type { Session } from "../types";
 import type { Provider } from "../lib/agents";
+import type { BudgetSetting } from "../lib/api";
 import { RecIndicator } from "./RecIndicator";
 import { RecordingToggle } from "./RecordingToggle";
 import { SearchBar } from "./SearchBar";
@@ -14,11 +15,12 @@ interface Props {
   agentFilter: Provider | null;
   sessionBudget?: { id: string; used: number; limit: number; timeLimit?: number };
   dailyTokens: number;
-  onBudgetSaved: (tokenLimit: number | null, timeLimit: number | null) => Promise<void>;
+  budgets: BudgetSetting[];
+  onBudgetSaved: (scope: string, tokenLimit: number | null, timeLimit: number | null) => Promise<void>;
 }
 
 export const TopBar = forwardRef<HTMLInputElement, Props>(
-  ({ live, search, onSearch, onClearSearch, sessions, agentFilter, sessionBudget, dailyTokens, onBudgetSaved }, ref) => {
+  ({ live, search, onSearch, onClearSearch, sessions, agentFilter, sessionBudget, dailyTokens, budgets, onBudgetSaved }, ref) => {
     const [editing, setEditing] = useState(false);
     const [tokens, setTokens] = useState(sessionBudget?.limit?.toString() ?? "");
     const [seconds, setSeconds] = useState(sessionBudget?.timeLimit?.toString() ?? "");
@@ -31,8 +33,9 @@ export const TopBar = forwardRef<HTMLInputElement, Props>(
       [14400, "4h"],
       [86400, "24h"],
     ];
-    useEffect(() => { setTokens(sessionBudget?.limit?.toString() ?? ""); }, [sessionBudget?.limit]);
-    useEffect(() => { setSeconds(sessionBudget?.timeLimit?.toString() ?? ""); }, [sessionBudget?.timeLimit]);
+    const selectedBudget = budgets.find((b) => b.scope === "openai-api");
+    useEffect(() => { setTokens(selectedBudget?.token_limit?.toString() ?? ""); }, [selectedBudget?.token_limit]);
+    useEffect(() => { setSeconds(selectedBudget?.time_limit_s?.toString() ?? ""); }, [selectedBudget?.time_limit_s]);
     const remaining = sessionBudget ? Math.max(0, sessionBudget.limit - sessionBudget.used) : null;
     const percent = sessionBudget ? Math.max(0, Math.min(100, remaining! / sessionBudget.limit * 100)) : 0;
     return (
@@ -63,10 +66,15 @@ export const TopBar = forwardRef<HTMLInputElement, Props>(
             </span>
             <span className="whitespace-nowrap text-ink-faint">· {dailyTokens.toLocaleString()} today</span>
           </button>
-          {editing && <form style={{ backgroundColor: "#10151d", opacity: 1 }} className="absolute right-0 top-10 z-[9999] w-80 rounded-lg border border-border p-4 shadow-2xl ring-1 ring-black/80" onSubmit={async (e) => { e.preventDefault(); setSaveError(""); try { await onBudgetSaved(tokens ? Number(tokens) : null, seconds ? Number(seconds) : null); setEditing(false); } catch (err) { setSaveError(err instanceof Error ? err.message : "Save failed"); } }}>
-            <div className="mb-1 text-xs font-semibold text-ink">Session limits</div>
+          {editing && <form style={{ backgroundColor: "#10151d", opacity: 1 }} className="absolute right-0 top-10 z-[9999] w-80 rounded-lg border border-border p-4 shadow-2xl ring-1 ring-black/80" onSubmit={async (e) => { e.preventDefault(); setSaveError(""); try { await onBudgetSaved("openai-api", tokens ? Number(tokens) : null, seconds ? Number(seconds) : null); setEditing(false); } catch (err) { setSaveError(err instanceof Error ? err.message : "Save failed"); } }}>
+            <div className="mb-1 text-xs font-semibold text-ink">API token budget</div>
+            <div className="mb-2 rounded border border-border-soft bg-black/20 px-2 py-1.5 text-[11px] text-ink-faint">
+              {selectedBudget?.token_limit == null
+                ? "No token cap selected"
+                : `${selectedBudget.token_used.toLocaleString()} used · ${Math.max(0, selectedBudget.token_limit - selectedBudget.token_used).toLocaleString()} remaining of ${selectedBudget.token_limit.toLocaleString()}`}
+            </div>
             <p className="mb-2 text-[11px] text-ink-faint">
-              Applies to the current Claude, Codex, and API session. Only the API agent actually stops itself when hit. Claude/Codex just show it as a recorded budget.
+              This limit applies to the Zetesis API agent and is enforced before each request.
             </p>
 
             <label className="mb-1 block text-xs">Token limit</label>

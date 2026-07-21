@@ -1,5 +1,5 @@
 {
-  "description": "Flight Recorder local audit capture for Claude",
+  "description": "Zetesis local audit capture for Claude",
   "hooks": {
     "PreToolUse": [{"matcher": ".*", "hooks": [{"type": "command", "command": "fr-hook --provider claude", "timeout": 5}]}],
     "PostToolUse": [{"matcher": ".*", "hooks": [{"type": "command", "command": "fr-hook --provider claude", "timeout": 5}]}],

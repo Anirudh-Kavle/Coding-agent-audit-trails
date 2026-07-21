@@ -128,6 +128,51 @@ def extract_reasoning(transcript_path: str | None, tool_use_id: str | None = Non
     return reasoning, False
 
 
+def extract_tool_result(transcript_path: str | None, tool_input: object) -> str | None:
+    """Recover Codex exec output when PostToolUse omits ``tool_response``.
+
+    Codex transcripts store a ``custom_tool_call`` followed by an
+    ``event_msg/custom_tool_call_output`` pair. The lifecycle hook currently
+    exposes the former input but not the latter output, so correlate by the
+    command text and call id. Claude transcripts simply return no match.
+    """
+    if not transcript_path:
+        return None
+    path = Path(transcript_path)
+    if not path.exists():
+        return None
+    try:
+        entries = _parse_entries(_tail_lines(path, MAX_TAIL_BYTES))
+    except Exception:
+        return None
+    command = tool_input.get("command") if isinstance(tool_input, dict) else None
+    command = str(command) if command else ""
+    call_id: str | None = None
+    call_index = -1
+    for i, entry in enumerate(entries):
+        payload = entry.get("payload") if isinstance(entry, dict) else None
+        if not isinstance(payload, dict) or payload.get("type") != "custom_tool_call":
+            continue
+        raw_input = str(payload.get("input") or "")
+        if command and command not in raw_input:
+            continue
+        call_id = payload.get("call_id")
+        call_index = i
+    if not call_id:
+        return None
+    for entry in entries[call_index + 1:]:
+        payload = entry.get("payload") if isinstance(entry, dict) else None
+        if not isinstance(payload, dict) or payload.get("type") != "custom_tool_call_output":
+            continue
+        if payload.get("call_id") != call_id:
+            continue
+        output = payload.get("output")
+        if output is None:
+            return None
+        return json.dumps(output, ensure_ascii=False, default=str)
+    return None
+
+
 def snapshot_transcript(transcript_path: str | None, session_id: str, snapshots_dir: Path) -> Path | None:
     """PreCompact shield: copy the transcript before Codex compacts it."""
     if not transcript_path:

@@ -10,7 +10,8 @@ import sqlite3
 import time
 from pathlib import Path
 
-STORE_DIR = Path.home() / ".flight-recorder"
+STORE_DIR = Path.home() / ".zetesis"
+_LEGACY_STORE_DIR = Path.home() / ".flight-recorder"
 DB_PATH = STORE_DIR / "recorder.db"
 EVENTS_DIR = STORE_DIR / "events"
 SNAPSHOTS_DIR = STORE_DIR / "snapshots"
@@ -22,6 +23,8 @@ SCHEMA_PATH = Path(__file__).with_name("schema.sql")
 
 
 def ensure_dirs() -> None:
+    if _LEGACY_STORE_DIR.is_dir() and not STORE_DIR.exists():
+        _LEGACY_STORE_DIR.rename(STORE_DIR)
     STORE_DIR.mkdir(parents=True, exist_ok=True)
     EVENTS_DIR.mkdir(parents=True, exist_ok=True)
     SNAPSHOTS_DIR.mkdir(parents=True, exist_ok=True)
@@ -82,6 +85,9 @@ def init_db() -> None:
                 conn.execute(f"ALTER TABLE sessions ADD COLUMN {name} {definition}")
         conn.execute("CREATE INDEX IF NOT EXISTS idx_events_tool_kind ON events(tool_kind)")
         conn.execute(
+            "CREATE TABLE IF NOT EXISTS budget_settings (scope TEXT PRIMARY KEY, token_limit INTEGER, time_limit_s INTEGER, updated_at INTEGER NOT NULL)"
+        )
+        conn.execute(
             "CREATE INDEX IF NOT EXISTS idx_events_tool_use_id "
             "ON events(session_id, tool_use_id) WHERE tool_use_id IS NOT NULL"
         )
@@ -105,6 +111,23 @@ def upsert_session(conn: sqlite3.Connection, session_id: str, ts: int, cwd: str 
             git_repo=COALESCE(excluded.git_repo, sessions.git_repo)
         """,
         (session_id, ts, cwd, git_repo, source),
+    )
+
+
+def apply_provider_budget(conn: sqlite3.Connection, session_id: str, provider: str) -> None:
+    """Seed a new native-agent session from its configured provider cap.
+
+    Existing usage and limits are never overwritten. This makes a fresh chat
+    inherit the current Claude/Codex/API budget while resumed chats keep the
+    cap they started with.
+    """
+    scope = "openai-api" if provider == "api" else provider
+    conn.execute(
+        """UPDATE sessions
+           SET token_limit = COALESCE(token_limit, (SELECT token_limit FROM budget_settings WHERE scope = ?)),
+               time_limit_s = COALESCE(time_limit_s, (SELECT time_limit_s FROM budget_settings WHERE scope = ?))
+           WHERE id = ?""",
+        (scope, scope, session_id),
     )
 
 
@@ -143,6 +166,21 @@ def add_daily_usage(conn: sqlite3.Connection, day: str, tokens: int, updated_at:
            ON CONFLICT(day) DO UPDATE SET token_count = api_usage.token_count + excluded.token_count,
            updated_at = excluded.updated_at""",
         (day, tokens, updated_at),
+    )
+
+
+def get_budget(conn: sqlite3.Connection, scope: str) -> sqlite3.Row | None:
+    return conn.execute("SELECT scope, token_limit, time_limit_s, updated_at FROM budget_settings WHERE scope = ?", (scope,)).fetchone()
+
+
+def set_budget(conn: sqlite3.Connection, scope: str, token_limit: int | None,
+               time_limit_s: int | None, updated_at: int) -> None:
+    conn.execute(
+        """INSERT INTO budget_settings(scope, token_limit, time_limit_s, updated_at)
+           VALUES (?, ?, ?, ?)
+           ON CONFLICT(scope) DO UPDATE SET token_limit = excluded.token_limit,
+           time_limit_s = excluded.time_limit_s, updated_at = excluded.updated_at""",
+        (scope, token_limit, time_limit_s, updated_at),
     )
 
 

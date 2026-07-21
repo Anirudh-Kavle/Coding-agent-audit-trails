@@ -143,6 +143,29 @@ export async function updateBudget(sessionId: string, tokenLimit: number | null,
   return res.json();
 }
 
+export interface BudgetSetting {
+  scope: string;
+  token_limit: number | null;
+  time_limit_s: number | null;
+  token_used: number;
+}
+
+export async function getBudgets(): Promise<BudgetSetting[]> {
+  const res = await fetch(`${API_BASE}/budgets`);
+  if (!res.ok) throw new Error("Failed to fetch budgets");
+  return res.json();
+}
+
+export async function updateScopeBudget(scope: string, tokenLimit: number | null, timeLimit: number | null) {
+  const res = await fetch(`${API_BASE}/budgets/${scope}`, {
+    method: "PATCH",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ token_limit: tokenLimit, time_limit_s: timeLimit }),
+  });
+  if (!res.ok) throw new Error("Could not update budget");
+  return res.json();
+}
+
 // --- Fetchers ---
 
 export async function getSessions(): Promise<Session[]> {
