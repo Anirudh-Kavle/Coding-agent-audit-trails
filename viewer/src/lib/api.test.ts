@@ -8,6 +8,7 @@ const rawEvent = {
   ts: 1_752_700_000_000,
   phase: "post",
   tool: "Bash",
+  provider: "claude",
   arguments_json: '{"command":"npm test"}',
   result_json: '{"stdout":"ok","exit_code":0}',
   exit_ok: 1 as const,

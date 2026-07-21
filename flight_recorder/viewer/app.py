@@ -52,7 +52,10 @@ def list_sessions() -> list[dict]:
                        OR LOWER(e.tool) IN ('bash', 'run_command')) AS bash_count,
                    COUNT(e.id) FILTER (WHERE e.exit_ok = 0) AS failed_count,
                    COUNT(e.id) FILTER (WHERE e.risk = 'sensitive') AS sensitive_count,
-                   MAX(e.git_branch) AS git_branch
+                   MAX(e.git_branch) AS git_branch,
+                   (SELECT provider FROM events
+                    WHERE session_id = s.id AND provider IS NOT NULL
+                    ORDER BY ts ASC LIMIT 1) as provider
             FROM sessions s
             LEFT JOIN events e ON e.session_id = s.id
             GROUP BY s.id
@@ -170,6 +173,14 @@ def _fts_match(free_text: str) -> str:
     return " ".join(f'"{t}"*' for t in terms)
 
 
+def _split_list(value: str) -> list[str]:
+    """The filter panel writes comma-separated OR-lists (risk:write,exec) and,
+    for tool, +-joined aliases within one element (bash+run_command). A
+    deliberately-empty selection is sent as the literal sentinel __none__,
+    which naturally matches nothing here — no special-casing needed."""
+    return [v for v in value.split(",") if v]
+
+
 @app.get("/api/search")
 def search(q: str = "", limit: int = 200) -> list[dict]:
     qualifiers = dict(QUALIFIER_RE.findall(q))
@@ -191,17 +202,33 @@ def search(q: str = "", limit: int = 200) -> list[dict]:
             params.extend(ids)
 
         if "risk" in qualifiers:
-            conditions.append("risk = ?")
-            params.append(qualifiers["risk"])
+            values = _split_list(qualifiers["risk"])
+            conditions.append("risk IN (%s)" % ",".join("?" for _ in values) if values else "0")
+            params.extend(values)
         if "tool" in qualifiers:
-            conditions.append("LOWER(tool) = LOWER(?)")
-            params.append(qualifiers["tool"])
+            tokens = [t for v in _split_list(qualifiers["tool"]) for t in v.split("+")]
+            if tokens:
+                sub = []
+                for t in tokens:
+                    if t.endswith("*"):
+                        sub.append("LOWER(tool) LIKE ?")
+                        params.append(t[:-1].lower() + "%")
+                    else:
+                        sub.append("LOWER(tool) = ?")
+                        params.append(t.lower())
+                conditions.append("(" + " OR ".join(sub) + ")")
+            else:
+                conditions.append("0")
         if "kind" in qualifiers:
             conditions.append("LOWER(tool_kind) = LOWER(?)")
             params.append(qualifiers["kind"])
         if "session" in qualifiers:
-            conditions.append("session_id LIKE ?")
-            params.append(qualifiers["session"] + "%")
+            values = _split_list(qualifiers["session"])
+            if values:
+                conditions.append("(" + " OR ".join("session_id LIKE ?" for _ in values) + ")")
+                params.extend(v + "%" for v in values)
+            else:
+                conditions.append("0")
         if "file" in qualifiers:
             conditions.append("arguments_json LIKE ?")
             params.append(f"%{qualifiers['file']}%")

@@ -1,17 +1,28 @@
 import { useState } from "react";
-import { type Session, type RiskTier, RISK_TIERS, RISK_DOT, RISK_LABEL } from "../types";
+import { type Session } from "../types";
 import { formatTime, dayLabel } from "../lib/format";
+import {
+  type Provider,
+  PROVIDERS,
+  PROVIDER_LABEL,
+  PROVIDER_SHORT,
+} from "../lib/agents";
+import { Tooltip } from "./Tooltip";
+import { ProviderIcon } from "./ProviderIcon";
 
 interface Props {
-  sessions: Session[];
+  width: number;
+  onWidthChange: (width: number) => void;
+  sessions: Session[]; // already scoped by agentFilter — drives project/session listing
+  allSessions: Session[]; // full, unscoped list — used only for per-agent counts
   selectedSession: string | null;
   onSelectSession: (id: string | null) => void;
   selectedProject: string | null; // a specific folder/clone (full path key)
   onSelectProject: (key: string | null) => void;
   selectedGroup: string | null; // a project name spanning all its folders
   onSelectGroup: (name: string | null) => void;
-  riskFilter: Set<RiskTier>;
-  onToggleRisk: (r: RiskTier) => void;
+  agentFilter: Provider | null;
+  onSelectAgent: (p: Provider | null) => void;
 }
 
 // Project identity is derived server-side (repo root, else working folder).
@@ -26,14 +37,6 @@ export function projectNameOf(s: Session): string {
   return key.replace(/[\\/]+$/, "").split(/[\\/]/).pop() || "unknown";
 }
 
-const RISK_HINT: Record<RiskTier, string> = {
-  info: "Read-only lookups: file reads, searches, listings",
-  write: "File modifications: edits, writes, patches",
-  exec: "Commands executed in a shell",
-  network: "Actions that reached the network",
-  sensitive: "Matched a sensitive pattern: credentials, secrets, or destructive commands",
-};
-
 // Disambiguating label for one folder/clone of a project: its last two path
 // segments ("aleky/audit-trails-v2") — enough to tell versions apart without
 // showing the whole path.
@@ -43,15 +46,18 @@ function variantLabel(key: string): string {
 }
 
 export function SessionSidebar({
+  width,
+  onWidthChange,
   sessions,
+  allSessions,
   selectedSession,
   onSelectSession,
   selectedProject,
   onSelectProject,
   selectedGroup,
   onSelectGroup,
-  riskFilter,
-  onToggleRisk,
+  agentFilter,
+  onSelectAgent,
 }: Props) {
   const [collapsed, setCollapsed] = useState<Set<string>>(new Set());
 
@@ -77,8 +83,48 @@ export function SessionSidebar({
   };
 
   return (
-    <aside className="flex w-60 shrink-0 flex-col border-r border-border bg-surface/40">
-      <div className="min-h-0 flex-1 overflow-y-auto px-2 py-3">
+    <aside style={{ width }} className="relative flex min-w-52 max-w-[38vw] shrink-0 flex-col overflow-hidden border-r border-border bg-surface/40">
+      {/* Agent scope — splits the unified timeline by which hook recorded the
+          event, since Claude Code and Codex can run against the same repo at once. */}
+      <div className="border-b border-border px-3 py-3">
+        <SidebarHeading>Agent</SidebarHeading>
+        <div className="mt-1 flex flex-wrap gap-1">
+          <button
+            onClick={() => onSelectAgent(null)}
+            title="Show sessions from every agent"
+            className={[
+              "cursor-pointer rounded-full border px-2.5 py-1 font-mono text-[11px] transition-colors",
+              agentFilter === null
+                ? "border-transparent bg-surface-2 text-ink"
+                : "border-border text-ink-muted hover:bg-surface/70 hover:text-ink",
+            ].join(" ")}
+          >
+            All ({allSessions.length})
+          </button>
+          {PROVIDERS.map((p) => {
+            const count = allSessions.filter((s) => s.provider === p).length;
+            const on = agentFilter === p;
+            return (
+              <button
+                key={p}
+                onClick={() => onSelectAgent(on ? null : p)}
+                title={PROVIDER_LABEL[p]}
+                className={[
+                  "flex cursor-pointer items-center gap-1 rounded-full border px-2.5 py-1 font-mono text-[11px] transition-colors",
+                  on
+                    ? "border-transparent bg-surface-2 text-ink"
+                    : "border-border text-ink-muted hover:bg-surface/70 hover:text-ink",
+                ].join(" ")}
+              >
+                <ProviderIcon provider={p} />
+                {PROVIDER_SHORT[p]} ({count})
+              </button>
+            );
+          })}
+        </div>
+      </div>
+
+      <div className="min-h-0 flex-1 overflow-y-auto overflow-x-hidden px-2 py-3">
         <SidebarHeading>Projects</SidebarHeading>
         <button
           onClick={() => {
@@ -86,7 +132,7 @@ export function SessionSidebar({
             onSelectProject(null);
             onSelectGroup(null);
           }}
-          title="Show every recorded event across all projects and sessions"
+          title="Show every recorded event in the current agent scope"
           className={[
             "mb-2 block w-full cursor-pointer rounded px-2 py-1.5 text-left text-xs transition-colors",
             selectedSession === null && selectedProject === null && selectedGroup === null
@@ -99,10 +145,10 @@ export function SessionSidebar({
 
         {[...groups.entries()].map(([name, variants]) => {
           const isCollapsed = collapsed.has(name);
-          const allSessions = [...variants.values()].flat();
+          const groupSessions = [...variants.values()].flat();
           const isGroupSelected =
             selectedGroup === name && selectedSession === null && selectedProject === null;
-          const live = allSessions.some((s) => s.live);
+          const live = groupSessions.some((s) => s.live);
           const multiVariant = variants.size > 1;
           return (
             <div key={name} className="mb-2">
@@ -146,7 +192,7 @@ export function SessionSidebar({
                   />
                   <span className="truncate text-xs font-medium text-ink">{name}</span>
                   <span className="ml-auto shrink-0 font-mono text-[10px] text-ink-faint">
-                    {allSessions.length}
+                    {groupSessions.length}
                   </span>
                 </button>
               </div>
@@ -209,6 +255,13 @@ export function SessionSidebar({
                           <span className="truncate font-mono text-[10px] text-ink-muted">
                             {s.label ?? s.id.slice(0, 8)}
                           </span>
+                          {agentFilter === null && (
+                            <Tooltip label={PROVIDER_LABEL[s.provider]} className="ml-auto shrink-0">
+                              <span className="rounded bg-surface-2 px-1 py-0.5 font-mono text-[9px] uppercase text-ink-faint">
+                                {PROVIDER_SHORT[s.provider]}
+                              </span>
+                            </Tooltip>
+                          )}
                         </span>
                       </button>
                     ))}
@@ -219,44 +272,21 @@ export function SessionSidebar({
         })}
       </div>
 
-      {/* Risk filters */}
-      <div className="border-t border-border px-3 py-3">
-        <SidebarHeading>Filters</SidebarHeading>
-        <div className="mt-1 space-y-1">
-          {RISK_TIERS.map((r) => {
-            const on = riskFilter.has(r);
-            return (
-              <label
-                key={r}
-                title={RISK_HINT[r]}
-                className="flex cursor-pointer items-center gap-2 rounded px-1 py-0.5 text-xs transition-colors hover:bg-surface/70"
-              >
-                <input
-                  type="checkbox"
-                  checked={on}
-                  onChange={() => onToggleRisk(r)}
-                  className="peer sr-only"
-                />
-                <span
-                  className={[
-                    "flex h-3.5 w-3.5 items-center justify-center rounded-sm border",
-                    on ? "border-transparent" : "border-border",
-                    on ? RISK_DOT[r] : "",
-                  ].join(" ")}
-                  aria-hidden
-                >
-                  {on && (
-                    <svg className="h-2.5 w-2.5 text-bg" viewBox="0 0 24 24" fill="none">
-                      <path d="M5 12l5 5L20 7" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round" />
-                    </svg>
-                  )}
-                </span>
-                <span className={on ? "text-ink" : "text-ink-muted"}>{RISK_LABEL[r]}</span>
-              </label>
-            );
-          })}
-        </div>
-      </div>
+      <div
+        role="separator"
+        aria-label="Resize sidebar"
+        aria-orientation="vertical"
+        onPointerDown={(event) => {
+          event.currentTarget.setPointerCapture(event.pointerId);
+          const startX = event.clientX;
+          const startWidth = width;
+          const move = (e: PointerEvent) => onWidthChange(Math.max(208, Math.min(window.innerWidth * 0.38, startWidth + e.clientX - startX)));
+          const up = () => { window.removeEventListener("pointermove", move); window.removeEventListener("pointerup", up); };
+          window.addEventListener("pointermove", move);
+          window.addEventListener("pointerup", up, { once: true });
+        }}
+        className="absolute inset-y-0 right-0 z-10 w-1 cursor-col-resize transition-colors hover:bg-risk-write/60"
+      />
     </aside>
   );
 }

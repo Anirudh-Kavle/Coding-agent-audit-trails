@@ -8,6 +8,7 @@
   ],
   "scripts": {
     "build": "cd viewer && npm run build",
+    "dev": "npm run dev:viewer",
     "dev:viewer": "cd viewer && npm run dev",
     "dev:daemon": "cd services/daemon && python -m fr_hook",
     "dev:store": "cd services/store && uvicorn viewer:app --reload --host 127.0.0.1 --port 7878",
