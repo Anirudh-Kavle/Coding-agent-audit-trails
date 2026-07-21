@@ -26,7 +26,7 @@ patterns:
   - reason: "privilege escalation"
     regex: '(?i)\bsudo\b'
   - reason: "permissive chmod"
-    regex: 'chmod\s+7\d\d'
+    regex: 'chmod\s+(-\S+\s+)*7\d\d'
   - reason: "dotenv file"
     regex: '\.env\b'
   - reason: "account creation"
