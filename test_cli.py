@@ -1,34 +1,9 @@
-"""CLI rendering and export checks."""
+"""CLI export checks."""
 import argparse
 import json
 import time
 
-from flight_recorder import cli, store
-from flight_recorder.cli import banner, _color, _monkey, _ART
-
-
-def test_banner_contains_art_and_tagline():
-    out = banner()
-    for row in _ART:
-        assert row in out
-    assert "local audit trail" in out
-
-
-def test_banner_contains_monkey():
-    # Non-tty output is plain, so the raw monkey art appears verbatim.
-    assert _monkey() in banner()
-    assert _monkey().count("\n") > 20  # a real multi-line render, not empty
-
-
-def test_art_rows_aligned():
-    # Misaligned block letters look broken; all rows must be equal width.
-    assert len({len(row) for row in _ART}) == 1
-
-
-def test_no_color_when_not_tty():
-    # Tests run with piped stdout (not a tty), so output must be plain.
-    assert "\033[" not in banner()
-    assert _color("91", "x") == "x"
+from zetesis import cli, store
 
 
 def test_export_writes_only_todays_events(tmp_path, monkeypatch):
@@ -51,7 +26,7 @@ def test_export_writes_only_todays_events(tmp_path, monkeypatch):
         conn.close()
 
     output = tmp_path / "today.json"
-    cli.cmd_export(argparse.Namespace(output=output, output_option=None))
+    cli.cmd_export(argparse.Namespace(output=output))
 
     exported = json.loads(output.read_text(encoding="utf-8"))
     assert [event["session_id"] for event in exported] == ["today"]
