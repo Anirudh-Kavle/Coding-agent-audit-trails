@@ -1,5 +1,5 @@
 {
-  "name": "flight-recorder",
+  "name": "zetesis",
   "description": "Local, real-time audit trail for Claude Code sessions",
   "version": "0.0.1",
   "private": true,

@@ -110,24 +110,62 @@ export function gitDirtySuffix(dirty: boolean | null): string {
   return dirty ? " (dirty)" : "";
 }
 
+// Per-section markdown — each drawer tab can be copied on its own.
+export function whatToMarkdown(e: FlightEvent): string {
+  const lines = [
+    "**What**",
+    "```",
+    eventSummary(e),
+    "```",
+  ];
+  if (e.files_touched && e.files_touched.length > 0) {
+    lines.push("", "files touched:", ...e.files_touched.map((f) => `- \`${f}\``));
+  }
+  return lines.join("\n");
+}
+
+export function whyToMarkdown(e: FlightEvent): string {
+  return [
+    "**Why**",
+    e.capture_gap
+      ? "_reasoning unavailable (transcript compacted before capture)_"
+      : e.reasoning_text || "_none captured_",
+  ].join("\n");
+}
+
+export function contextToMarkdown(e: FlightEvent): string {
+  const lines = [
+    "**Context**",
+    `- cwd branch: \`${e.git_branch ?? "—"}\` @ \`${shortSha(e.git_head)}\`${e.git_dirty ? " (dirty)" : ""}`,
+    `- session: \`${e.session_id}\``,
+    `- phase: \`${e.phase}\``,
+  ];
+  if (e.risk_reasons) lines.push(`- risk reasons: ${e.risk_reasons}`);
+  return lines.join("\n");
+}
+
+export function resultToMarkdown(e: FlightEvent): string {
+  return [
+    "**Result**",
+    `- exit: ${e.exit_ok ? "ok" : "failed"}`,
+    "```",
+    JSON.stringify(e.result_json ?? { note: "no result recorded" }, null, 2),
+    "```",
+  ].join("\n");
+}
+
 // Clean-markdown export of one event — feeds the S1 incident-report story.
 export function eventToMarkdown(e: FlightEvent): string {
   const lines = [
     `### ${e.tool} · ${e.risk} · ${formatTime(e.ts)}`,
     "",
-    "**What**",
-    "```",
-    eventSummary(e),
-    "```",
+    whatToMarkdown(e),
     "",
-    "**Why**",
-    e.capture_gap
-      ? "_reasoning not captured for this action_"
-      : e.reasoning_text || "_none captured_",
+    whyToMarkdown(e),
     "",
-    "**Context**",
-    `- cwd branch: \`${e.git_branch ?? "—"}\` @ \`${shortSha(e.git_head)}\`${gitDirtySuffix(e.git_dirty)}`,
-    `- session: \`${e.session_id}\``,
+    contextToMarkdown(e),
+    "",
+    resultToMarkdown(e),
   ];
   return lines.join("\n");
 }

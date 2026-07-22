@@ -15,7 +15,23 @@ from fastapi.staticfiles import StaticFiles
 
 from .. import store
 
-app = FastAPI(title="Flight Recorder")
+app = FastAPI(title="Zetesis")
+
+# Claude/Codex providers can occasionally deliver PreToolUse and PostToolUse
+# as separate rows. Do not show the empty pre-row when a completed post-row is
+# already present; the selected UI action should expose its actual result.
+COMPLETED_ACTION_FILTER = """(
+    phase != 'pre'
+    OR (result_json IS NOT NULL AND result_json != '')
+    OR NOT EXISTS (
+        SELECT 1 FROM events completed
+        WHERE completed.session_id = events.session_id
+          AND completed.tool = events.tool
+          AND completed.phase = 'post'
+          AND completed.ts >= events.ts
+          AND (events.tool_use_id IS NULL OR completed.tool_use_id = events.tool_use_id)
+    )
+)"""
 
 
 def _conn() -> sqlite3.Connection:
@@ -53,9 +69,12 @@ def list_sessions() -> list[dict]:
                    COUNT(e.id) FILTER (WHERE e.exit_ok = 0) AS failed_count,
                    COUNT(e.id) FILTER (WHERE e.risk = 'sensitive') AS sensitive_count,
                    MAX(e.git_branch) AS git_branch,
-                   (SELECT provider FROM events
-                    WHERE session_id = s.id AND provider IS NOT NULL
-                    ORDER BY ts ASC LIMIT 1) as provider
+                   COALESCE(
+                       (SELECT provider FROM events
+                        WHERE session_id = s.id AND provider IS NOT NULL
+                        ORDER BY ts ASC LIMIT 1),
+                       CASE WHEN s.source IN ('claude', 'codex', 'openai-api') THEN s.source END
+                   ) as provider
             FROM sessions s
             LEFT JOIN events e ON e.session_id = s.id
             GROUP BY s.id
@@ -86,23 +105,62 @@ def usage() -> dict:
         conn.close()
 
 
+def _budget_value(raw, name: str):
+    if raw in (None, "", 0, "0"):
+        return None
+    try:
+        number = int(raw)
+    except (TypeError, ValueError):
+        raise HTTPException(400, f"{name} must be a positive integer or null")
+    if number < 1:
+        raise HTTPException(400, f"{name} must be a positive integer or null")
+    return number
+
+
+@app.get("/api/budgets")
+def budgets() -> list[dict]:
+    conn = _conn()
+    try:
+        scopes = ["global", "claude", "codex", "openai-api"]
+        out = []
+        for scope in scopes:
+            row = store.get_budget(conn, scope)
+            if scope == "global":
+                used = conn.execute("SELECT COALESCE(SUM(token_used), 0) FROM sessions").fetchone()[0]
+            else:
+                used = conn.execute(
+                    """SELECT COALESCE(SUM(s.token_used), 0) FROM sessions s
+                       WHERE COALESCE((SELECT provider FROM events e WHERE e.session_id = s.id AND e.provider IS NOT NULL ORDER BY e.ts DESC LIMIT 1), s.source) = ?""",
+                    (scope,),
+                ).fetchone()[0]
+            out.append({"scope": scope, "token_limit": row["token_limit"] if row else None,
+                        "time_limit_s": row["time_limit_s"] if row else None,
+                        "token_used": int(used or 0)})
+        return out
+    finally:
+        conn.close()
+
+
+@app.patch("/api/budgets/{scope}")
+def update_scope_budget(scope: str, payload: dict) -> dict:
+    if scope not in {"global", "claude", "codex", "openai-api"}:
+        raise HTTPException(400, "Unknown budget scope")
+    token_limit = _budget_value(payload.get("token_limit"), "token_limit")
+    time_limit_s = _budget_value(payload.get("time_limit_s"), "time_limit_s")
+    conn = _conn()
+    try:
+        store.set_budget(conn, scope, token_limit, time_limit_s, int(__import__("time").time() * 1000))
+        conn.commit()
+        return {"scope": scope, "token_limit": token_limit, "time_limit_s": time_limit_s}
+    finally:
+        conn.close()
+
+
 @app.patch("/api/sessions/{session_id}/budget")
 def update_budget(session_id: str, payload: dict) -> dict:
     """Update the shared API session limits used by the terminal agent."""
-    def value(name: str):
-        raw = payload.get(name)
-        if raw in (None, "", 0, "0"):
-            return None
-        try:
-            number = int(raw)
-        except (TypeError, ValueError):
-            raise HTTPException(400, f"{name} must be a positive integer or null")
-        if number < 1:
-            raise HTTPException(400, f"{name} must be a positive integer or null")
-        return number
-
-    token_limit = value("token_limit")
-    time_limit_s = value("time_limit_s")
+    token_limit = _budget_value(payload.get("token_limit"), "token_limit")
+    time_limit_s = _budget_value(payload.get("time_limit_s"), "time_limit_s")
     conn = _conn()
     try:
         if not conn.execute("SELECT 1 FROM sessions WHERE id = ?", (session_id,)).fetchone():
@@ -125,7 +183,7 @@ def session_events(session_id: str, risk: str | None = None, limit: int = 500) -
         # End, Stop, PreCompact) — real audit rows, just not "actions" the
         # timeline has a WHAT/WHY to show; they'd otherwise render as a bare
         # "null" tool badge with nothing else in it.
-        where: list[str] = ["tool IS NOT NULL"]
+        where: list[str] = ["tool IS NOT NULL", COMPLETED_ACTION_FILTER]
         params: list = []
         if session_id != "all":
             where.append("session_id = ?")
@@ -188,7 +246,7 @@ def search(q: str = "", limit: int = 200) -> list[dict]:
 
     conn = _conn()
     try:
-        conditions = ["tool IS NOT NULL"]
+        conditions = ["tool IS NOT NULL", COMPLETED_ACTION_FILTER]
         params: list = []
 
         if free_text:
@@ -283,7 +341,7 @@ async def stream():
             last_id = conn.execute("SELECT COALESCE(MAX(id), 0) FROM events").fetchone()[0]
             while True:
                 rows = conn.execute(
-                    "SELECT * FROM events WHERE id > ? AND tool IS NOT NULL ORDER BY id ASC", (last_id,)
+                    f"SELECT * FROM events WHERE id > ? AND tool IS NOT NULL AND {COMPLETED_ACTION_FILTER} ORDER BY id ASC", (last_id,)
                 ).fetchall()
                 for row in rows:
                     d = _event_to_dict(row)
@@ -307,7 +365,7 @@ else:
     @app.get("/")
     def index() -> dict:
         return {
-            "app": "flight-recorder",
+            "app": "zetesis",
             "api": "/api/sessions",
             "ui": "cd viewer && npm run build, or npm run dev (:5173 proxies /api)",
         }

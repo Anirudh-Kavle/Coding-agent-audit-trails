@@ -1,4 +1,4 @@
-# Flight Recorder Daemon (fr-hook)
+# Zetesis Daemon (fr-hook)
 
 Real-time event capture via Claude Code lifecycle hooks.
 

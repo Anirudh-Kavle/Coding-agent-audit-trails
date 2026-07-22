@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import type { FlightEvent, Session } from "./types";
 import { dataSource } from "./lib/dataSource";
-import { getUsage, updateBudget } from "./lib/api";
+import { getUsage, getBudgets, updateScopeBudget, type BudgetSetting } from "./lib/api";
 import { useEventStream } from "./hooks/useEventStream";
 import { useKeyboardNav } from "./hooks/useKeyboardNav";
 import { byNewest } from "./lib/format";
@@ -21,6 +21,7 @@ export default function App() {
   const { events, loading, lastArrivalId } = useEventStream();
   const [sessions, setSessions] = useState<Session[]>([]);
   const [dailyTokens, setDailyTokens] = useState(0);
+  const [budgets, setBudgets] = useState<BudgetSetting[]>([]);
   const [selectedSession, setSelectedSession] = useState<string | null>(null);
   const [selectedProject, setSelectedProject] = useState<string | null>(null);
   const [selectedGroup, setSelectedGroup] = useState<string | null>(null);
@@ -35,9 +36,20 @@ export default function App() {
   useEffect(() => {
     dataSource.getSessions().then(setSessions);
     getUsage().then((u) => setDailyTokens(u.token_count)).catch(() => undefined);
+    getBudgets().then(setBudgets).catch(() => undefined);
+
+    // The session list (which session is "live" per provider, its token
+    // usage, its provider) can change outside this tab — a new `fr api-ui`
+    // terminal starting, a session ending. Without this, the budget button
+    // keeps targeting whatever was live at page load, so "Save limits" can
+    // silently patch a stale session instead of the one actually running.
+    const id = setInterval(() => {
+      dataSource.getSessions().then(setSessions);
+      getBudgets().then(setBudgets).catch(() => undefined);
+    }, 4000);
+    return () => clearInterval(id);
   }, []);
 
-  const live = sessions.some((s) => s.live);
   const searching = search.trim().length > 0;
 
   // Sessions scoped to the selected agent — drives the sidebar's project tree
@@ -170,40 +182,21 @@ export default function App() {
     },
   });
 
-  // Budget editing targets the selected session; with nothing selected, the
-  // first session that already has a limit, else the most recent one — so the
-  // editor can always open, including to SET a first-ever limit (previously it
-  // could only modify a limit created from the terminal).
-  const budgetSession =
-    (selectedSession ? sessions.find((x) => x.id === selectedSession) : undefined) ??
-    sessions.find((x) => x.token_limit) ??
-    sessions[0];
-
   return (
     <div className="flex h-full flex-col">
       <TopBar
         ref={searchRef}
-        live={live}
         search={search}
         onSearch={setSearch}
         onClearSearch={() => setSearch("")}
         sessions={scopedSessions}
         agentFilter={agentFilter}
-        sessionBudget={
-          budgetSession
-            ? {
-                id: budgetSession.id,
-                used: budgetSession.token_used ?? 0,
-                limit: budgetSession.token_limit ?? 0,
-                timeLimit: budgetSession.time_limit_s,
-              }
-            : undefined
-        }
+        sessionBudget={(() => { const b = budgets.find((x) => x.scope === "openai-api"); return b?.token_limit ? { id: "openai-api", used: b.token_used, limit: b.token_limit, timeLimit: b.time_limit_s ?? undefined } : undefined; })()}
         dailyTokens={dailyTokens}
-        onBudgetSaved={async (tokenLimit, timeLimit) => {
-          if (!budgetSession) return;
-          await updateBudget(budgetSession.id, tokenLimit, timeLimit);
-          setSessions((all) => all.map((x) => x.id === budgetSession.id ? { ...x, token_limit: tokenLimit ?? undefined, time_limit_s: timeLimit ?? undefined } : x));
+        budgets={budgets}
+        onBudgetSaved={async (scope, tokenLimit, timeLimit) => {
+          await updateScopeBudget(scope, tokenLimit, timeLimit);
+          setBudgets((all) => all.map((b) => b.scope === scope ? { ...b, token_limit: tokenLimit, time_limit_s: timeLimit } : b));
         }}
       />
 

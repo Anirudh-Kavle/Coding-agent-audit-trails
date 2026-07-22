@@ -10,7 +10,8 @@ import sqlite3
 import time
 from pathlib import Path
 
-STORE_DIR = Path.home() / ".flight-recorder"
+STORE_DIR = Path.home() / ".zetesis"
+_LEGACY_STORE_DIR = Path.home() / ".flight-recorder"
 DB_PATH = STORE_DIR / "recorder.db"
 EVENTS_DIR = STORE_DIR / "events"
 SNAPSHOTS_DIR = STORE_DIR / "snapshots"
@@ -22,6 +23,8 @@ SCHEMA_PATH = Path(__file__).with_name("schema.sql")
 
 
 def ensure_dirs() -> None:
+    if _LEGACY_STORE_DIR.is_dir() and not STORE_DIR.exists():
+        _LEGACY_STORE_DIR.rename(STORE_DIR)
     STORE_DIR.mkdir(parents=True, exist_ok=True)
     EVENTS_DIR.mkdir(parents=True, exist_ok=True)
     SNAPSHOTS_DIR.mkdir(parents=True, exist_ok=True)
@@ -96,10 +99,13 @@ def init_db() -> None:
             if name not in columns:
                 conn.execute(f"ALTER TABLE events ADD COLUMN {name} TEXT")
         session_columns = {row[1] for row in conn.execute("PRAGMA table_info(sessions)")}
-        for name, definition in (("token_limit", "INTEGER"), ("time_limit_s", "INTEGER"), ("token_used", "INTEGER NOT NULL DEFAULT 0")):
+        for name, definition in (("token_limit", "INTEGER"), ("time_limit_s", "INTEGER"), ("token_used", "INTEGER NOT NULL DEFAULT 0"), ("current_turn_id", "TEXT")):
             if name not in session_columns:
                 conn.execute(f"ALTER TABLE sessions ADD COLUMN {name} {definition}")
         conn.execute("CREATE INDEX IF NOT EXISTS idx_events_tool_kind ON events(tool_kind)")
+        conn.execute(
+            "CREATE TABLE IF NOT EXISTS budget_settings (scope TEXT PRIMARY KEY, token_limit INTEGER, time_limit_s INTEGER, updated_at INTEGER NOT NULL)"
+        )
         conn.execute(
             "CREATE INDEX IF NOT EXISTS idx_events_tool_use_id "
             "ON events(session_id, tool_use_id) WHERE tool_use_id IS NOT NULL"
@@ -127,8 +133,41 @@ def upsert_session(conn: sqlite3.Connection, session_id: str, ts: int, cwd: str 
     )
 
 
+def apply_provider_budget(conn: sqlite3.Connection, session_id: str, provider: str) -> None:
+    """Seed a new native-agent session from its configured provider cap.
+
+    Existing usage and limits are never overwritten. This makes a fresh chat
+    inherit the current Claude/Codex/API budget while resumed chats keep the
+    cap they started with.
+    """
+    scope = "openai-api" if provider == "api" else provider
+    conn.execute(
+        """UPDATE sessions
+           SET token_limit = COALESCE(token_limit, (SELECT token_limit FROM budget_settings WHERE scope = ?)),
+               time_limit_s = COALESCE(time_limit_s, (SELECT time_limit_s FROM budget_settings WHERE scope = ?))
+           WHERE id = ?""",
+        (scope, scope, session_id),
+    )
+
+
 def mark_session_ended(conn: sqlite3.Connection, session_id: str, ts: int) -> None:
     conn.execute("UPDATE sessions SET ended_at = ? WHERE id = ?", (ts, session_id))
+
+
+def set_session_turn(conn: sqlite3.Connection, session_id: str, turn_id: str) -> None:
+    """Record the id of the turn currently in progress for this session.
+
+    Claude Code's hook payloads carry no per-turn identifier of their own
+    (unlike Codex, which sometimes does), so the hook mints one itself on
+    every UserPromptSubmit/SessionStart and every subsequent tool-use event
+    in that session is stamped with whatever this currently holds — that's
+    what lets the viewer group "everything from one prompt" together."""
+    conn.execute("UPDATE sessions SET current_turn_id = ? WHERE id = ?", (turn_id, session_id))
+
+
+def get_session_turn(conn: sqlite3.Connection, session_id: str) -> str | None:
+    row = conn.execute("SELECT current_turn_id FROM sessions WHERE id = ?", (session_id,)).fetchone()
+    return row["current_turn_id"] if row else None
 
 
 def update_session_usage(conn: sqlite3.Connection, session_id: str, tokens: int) -> None:
@@ -150,15 +189,37 @@ def add_daily_usage(conn: sqlite3.Connection, day: str, tokens: int, updated_at:
 
 
 def session_needs_title(conn: sqlite3.Connection, session_id: str) -> bool:
-    """Whether this session still lacks the Claude Code sidebar title —
-    gates the hook from re-scanning the transcript on every single call once
-    the title's already been found."""
+    """Whether this session still lacks a sidebar title — gates the hook
+    from re-deriving one on every single call once it's already been found."""
     row = conn.execute("SELECT title FROM sessions WHERE id = ?", (session_id,)).fetchone()
     return row is not None and not row["title"]
 
 
 def set_session_title(conn: sqlite3.Connection, session_id: str, title: str) -> None:
     conn.execute("UPDATE sessions SET title = ? WHERE id = ?", (title, session_id))
+
+
+def title_from_text(text: str, max_len: int = 80) -> str:
+    """First line of a prompt/task, capped for the sidebar — the fallback
+    title source for Codex and the API agent, neither of which write a
+    Claude-style "ai-title" transcript entry for extract_session_title()."""
+    first_line = text.strip().splitlines()[0].strip()
+    return first_line if len(first_line) <= max_len else first_line[:max_len - 1].rstrip() + "…"
+
+
+def get_budget(conn: sqlite3.Connection, scope: str) -> sqlite3.Row | None:
+    return conn.execute("SELECT scope, token_limit, time_limit_s, updated_at FROM budget_settings WHERE scope = ?", (scope,)).fetchone()
+
+
+def set_budget(conn: sqlite3.Connection, scope: str, token_limit: int | None,
+               time_limit_s: int | None, updated_at: int) -> None:
+    conn.execute(
+        """INSERT INTO budget_settings(scope, token_limit, time_limit_s, updated_at)
+           VALUES (?, ?, ?, ?)
+           ON CONFLICT(scope) DO UPDATE SET token_limit = excluded.token_limit,
+           time_limit_s = excluded.time_limit_s, updated_at = excluded.updated_at""",
+        (scope, token_limit, time_limit_s, updated_at),
+    )
 
 
 def find_pending_pre_event(conn: sqlite3.Connection, session_id: str, tool: str) -> sqlite3.Row | None:

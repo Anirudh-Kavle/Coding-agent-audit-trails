@@ -1,7 +1,7 @@
 import time
 import sqlite3
 
-from flight_recorder.store import (
+from zetesis.store import (
     init_db,
     get_conn,
     insert_event,

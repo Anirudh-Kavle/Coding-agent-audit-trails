@@ -53,7 +53,7 @@ export const SearchBar = forwardRef<HTMLInputElement, Props>(
     const filterActive = panelOpen || activeCount > 0;
 
     return (
-      <div ref={wrapperRef} className="relative flex w-full max-w-3xl items-center gap-2">
+      <div ref={wrapperRef} className="relative flex w-full items-center gap-2">
         <div className="flex min-w-0 flex-1 items-center gap-2 rounded-md border border-border bg-surface px-3 py-1.5">
           <SearchIcon />
           <input

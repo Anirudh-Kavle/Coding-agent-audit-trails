@@ -1,9 +1,9 @@
-"""Gate tests for deterministic risk classification (flight_recorder/risk.py
+"""Gate tests for deterministic risk classification (zetesis/risk.py
 + risk_rules.yaml).
 
 Run: .venv/bin/python -m pytest test_risk.py
 """
-from flight_recorder import risk
+from zetesis import risk
 
 
 def _args(command: str) -> str:
@@ -148,3 +148,21 @@ def test_duplicate_reason_from_args_and_result_is_not_repeated():
     )
     assert tier == "sensitive"
     assert reasons.count("secret-like keyword") == 1
+
+
+def test_patterns_are_compiled_once(monkeypatch):
+    risk._compiled_patterns.cache_clear()
+    compile_calls = 0
+    original_compile = risk.re.compile
+
+    def counting_compile(*args, **kwargs):
+        nonlocal compile_calls
+        compile_calls += 1
+        return original_compile(*args, **kwargs)
+
+    monkeypatch.setattr(risk.re, "compile", counting_compile)
+    risk.classify("Bash", _args("sudo whoami"))
+    risk.classify("Bash", _args("rm -rf build"))
+
+    assert compile_calls == len(risk._load_rules()["patterns"])
+    risk._compiled_patterns.cache_clear()

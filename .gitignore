@@ -1,5 +1,5 @@
 CLAUDE.md
-flight-recorder-spec.md
+zetesis-spec.md
 
 # Frontend
 node_modules/
@@ -30,7 +30,7 @@ docs/payloads/*.jsonl
 *.swo
 
 # Storage
-~/.flight-recorder/
+~/.zetesis/
 *.db
 *.db-shm
 *.db-wal

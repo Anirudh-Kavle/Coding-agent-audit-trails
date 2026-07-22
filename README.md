@@ -198,14 +198,15 @@ mirror, or list the raw files with `ls ~/.zetesis` (PowerShell:
 ## CLI reference
 
 ```
-fr init      [--global]            register hooks (project by default) + create the store
-fr status                          store path, session/event counts, hook registration status
-fr ui        [--port] [--no-browser]   start the viewer and open it in a browser
-fr grep <pattern>                  grep across the JSONL mirror
-fr agent <task> [...]              one-shot API-backed agent run
-fr api-ui [...]                    interactive API-backed agent
-fr test-hook                       record a synthetic Pre/PostToolUse pair to confirm capture
-fr test-notification                test the desktop sensitive-action alert
+fr init  [--global]           register hooks (project by default) + create the store
+fr status                     store path, session/event counts, hook registration status
+fr ui    [--port] [--no-browser]   start the viewer and open it in a browser
+fr grep <pattern>             grep across the JSONL mirror
+fr export [-o <path>]         write today's canonical events to a JSON file
+fr agent <task> [...]         one-shot API-backed agent run
+fr api-ui [...]               interactive API-backed agent (see above)
+fr test-hook                  record a synthetic Pre/PostToolUse pair to confirm capture
+fr test-notification          test the desktop sensitive-action alert
 ```
 
 ## Viewer feature tour

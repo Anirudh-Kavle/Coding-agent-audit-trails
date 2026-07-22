@@ -1,7 +1,7 @@
 @import url('https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&family=IBM+Plex+Sans:wght@400;500;600&display=swap');
 @import "tailwindcss";
 
-/* Flight Recorder design tokens — restrained black-box.
+/* Zetesis design tokens — restrained black-box.
    The risk palette IS the identity; REC is the only non-semantic accent. */
 @theme {
   --font-sans: "IBM Plex Sans", system-ui, sans-serif;
@@ -55,7 +55,7 @@ body {
   overflow-x: hidden;
 }
 
-/* Keep native scrollbars inside the Flight Recorder dark palette. */
+/* Keep native scrollbars inside the Zetesis dark palette. */
 * {
   scrollbar-width: thin;
   scrollbar-color: var(--color-border) var(--color-bg);

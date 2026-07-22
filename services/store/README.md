@@ -1,6 +1,6 @@
-# Flight Recorder Store Service
+# Zetesis Store Service
 
-SQLite + JSONL append-only event storage for Flight Recorder.
+SQLite + JSONL append-only event storage for Zetesis.
 
 ## Setup
 

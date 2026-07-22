@@ -18,6 +18,21 @@ def _load_rules() -> dict:
         return yaml.safe_load(f)
 
 
+@lru_cache(maxsize=1)
+def _compiled_patterns() -> list[tuple[re.Pattern, str, str]]:
+    """(compiled_regex, reason, tier) for each pattern, compiled once instead
+    of on every classify() call. Invalid regexes are dropped here instead of
+    being retried and re-failing on every call."""
+    patterns = []
+    for pattern in _load_rules().get("patterns", []):
+        try:
+            regex = re.compile(pattern["regex"])
+        except re.error:
+            continue
+        patterns.append((regex, pattern["reason"], pattern.get("tier", "sensitive")))
+    return patterns
+
+
 def classify(tool: str, arguments_text: str, result_text: str = "") -> tuple[str, list[str]]:
     """Return (risk_tier, reasons) for a tool call given its args and (once
     available) its result, both as text.
@@ -36,19 +51,14 @@ def classify(tool: str, arguments_text: str, result_text: str = "") -> tuple[str
     search_only = tool in rules.get("search_only_tools", [])
     texts = [t for t in (("" if search_only else arguments_text), result_text) if t]
 
-    for pattern in rules.get("patterns", []):
-        try:
-            if not any(re.search(pattern["regex"], t) for t in texts):
-                continue
-        except re.error:
+    for regex, reason, pattern_tier in _compiled_patterns():
+        if not any(regex.search(text) for text in texts):
             continue
 
-        reason = pattern["reason"]
         if reason not in seen:
             seen.add(reason)
             reasons.append(reason)
 
-        pattern_tier = pattern.get("tier", "sensitive")
         if TIER_ORDER.index(pattern_tier) > TIER_ORDER.index(tier):
             tier = pattern_tier
 
